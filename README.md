@@ -41,11 +41,13 @@ uv sync
 ## Usage
 
 ### Compiling and Running Programs
-To compile and run, first run the compiler to generate LLVM IR code, then compile it to an executable using `gcc`:
+Generate an object file that can be linked with C functions:
 
 ```bash
-uv run python compiler.py --compile <source_file.ml>
+uv run compiler.py --compile <source_file.ml>
 ```
+
+This generates an object file (`output.obj` on Windows, `output.o` on Linux) that can be linked with the casting functions:
 
 ```bash
 gcc -mcmodel=large casting_functions.c output.obj -o program.exe
