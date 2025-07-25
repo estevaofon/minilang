@@ -40,12 +40,21 @@ uv sync
 
 ## Usage
 
-### Running Programs
+### Compiling and Running Programs
+At the moment, MiniLang Compiler is only available for Windows. The compiler generates an object file (`output.obj`) that can be linked with C functions for type casting.
 
 Use `uv run` to execute MiniLang programs:
 
 ```bash
-uv run compiler.py <source_file.ml>
+uv run python compiler.py --compile <source_file.ml>
+```
+
+```bash
+gcc -mcmodel=large casting_functions.c output.obj -o program.exe
+```
+
+```bash
+.\program.exe
 ```
 
 ### Compilation Process
