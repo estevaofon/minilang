@@ -41,9 +41,7 @@ uv sync
 ## Usage
 
 ### Compiling and Running Programs
-At the moment, MiniLang Compiler is only available for Windows. The compiler generates an object file (`output.obj`) that can be linked with C functions for type casting.
-
-Use `uv run` to execute MiniLang programs:
+To compile and run, first run the compiler to generate LLVM IR code, then compile it to an executable using `gcc`:
 
 ```bash
 uv run python compiler.py --compile <source_file.ml>
