@@ -1,4 +1,4 @@
-# MiniLang v2.0
+# MiniLang
 
 A statically-typed mini programming language with LLVM backend compilation.
 
