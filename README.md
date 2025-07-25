@@ -41,13 +41,13 @@ uv sync
 ## Usage
 
 ### Compiling and Running Programs
-Generate an object file that can be linked with C functions:
+Firt it compiles the source code into an object file using the MiniLang compiler:
 
 ```bash
 uv run compiler.py --compile <source_file.ml>
 ```
 
-This generates an object file (`output.obj` on Windows, `output.o` on Linux) that can be linked with the casting functions:
+Then we link the generated object file with the casting functions written in C, which handle type casting operations:
 
 ```bash
 gcc -mcmodel=large casting_functions.c output.obj -o program.exe
