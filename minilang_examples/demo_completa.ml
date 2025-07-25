@@ -24,21 +24,11 @@ let numeros: int[5] = [10, 20, 30, 40, 50]
 let temperaturas: float[7] = [23.5, 24.0, 22.8, 25.3, 26.1, 24.7, 23.9]
 
 print("Array de números:")
-let i: int = 0
-while i < 5 do
-    print(numeros[i])
-    print(" ")
-    i = i + 1
-end
+print(numeros)
 print("")
 
 print("Array de temperaturas:")
-let j: int = 0
-while j < 7 do
-    print(temperaturas[j])
-    print("°C ")
-    j = j + 1
-end
+print(temperaturas)
 print("")
 
 // 3. Arrays grandes com zeros()
@@ -49,12 +39,7 @@ array_grande[50] = 555
 array_grande[99] = 111
 
 print("Array de 100 elementos criado!")
-print("Primeiro: ")
-print(array_grande[0])
-print(" Meio: ")
-print(array_grande[50])
-print(" Último: ")
-print(array_grande[99])
+print(array_grande)
 print("")
 
 // 4. Conversão de tipos (casting)
@@ -172,23 +157,22 @@ end
 
 let array_para_ordenar: int[6] = [64, 34, 25, 12, 22, 11]
 print("Array antes da ordenação:")
-let k: int = 0
-while k < 6 do
-    print(array_para_ordenar[k])
-    print(" ")
-    k = k + 1
-end
+print(array_para_ordenar)
 print("")
 
 quicksort(array_para_ordenar, 0, 5)
 
 print("Array após ordenação:")
-let l: int = 0
-while l < 6 do
-    print(array_para_ordenar[l])
-    print(" ")
-    l = l + 1
-end
+print(array_para_ordenar)
 print("")
+
+let arr: int[3] = [1, 2, 3]
+print(arr)  // Saída: [1, 2, 3]
+
+let arrf: float[3] = [1.1, 2.2, 3.3]
+print(arrf)  // Saída: [1.100000, 2.200000, 3.300000]
+
+let arrs: string[2] = ["abc", "def"]
+print(arrs)  // Saída: [abc, def]
 
 print("=== Demonstração concluída com sucesso! ===") 

@@ -8,3 +8,14 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Compiled files
+*.ll
+*.bc
+*.o
+*.exe
+*.dll
+*.so
+*.dylib
+*.obj
+*.pdb

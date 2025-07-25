@@ -42,6 +42,7 @@ class TokenType(Enum):
     MINUS = "MINUS"
     MULTIPLY = "MULTIPLY"
     DIVIDE = "DIVIDE"
+    MODULO = "MODULO"  # Adicionado
     ASSIGN = "ASSIGN"
     GT = "GT"
     LT = "LT"
@@ -191,6 +192,8 @@ class Lexer:
                         string_value += '"'
                     elif escape_char == '\\':
                         string_value += '\\'
+                    elif escape_char == '0':
+                        string_value += '\0'
                     else:
                         string_value += escape_char
                     self._advance()
@@ -285,6 +288,7 @@ class Lexer:
             '-': TokenType.MINUS,
             '*': TokenType.MULTIPLY,
             '/': TokenType.DIVIDE,
+            '%': TokenType.MODULO,  # Adicionado
             '=': TokenType.ASSIGN,
             '>': TokenType.GT,
             '<': TokenType.LT,
@@ -445,7 +449,6 @@ class Parser:
     
     def _parse_type(self) -> Type:
         if self._match(TokenType.INT):
-            # Verificar se é um array
             if self._match(TokenType.LBRACKET):
                 size = None
                 if self._current_token().type == TokenType.NUMBER:
@@ -455,7 +458,6 @@ class Parser:
                 return ArrayType(IntType(), size)
             return IntType()
         elif self._match(TokenType.FLOAT_TYPE):
-            # Verificar se é um array de floats
             if self._match(TokenType.LBRACKET):
                 size = None
                 if self._current_token().type == TokenType.NUMBER:
@@ -465,6 +467,13 @@ class Parser:
                 return ArrayType(FloatType(), size)
             return FloatType()
         elif self._match(TokenType.STRING_TYPE) or self._match(TokenType.STR_TYPE):
+            if self._match(TokenType.LBRACKET):
+                size = None
+                if self._current_token().type == TokenType.NUMBER:
+                    size = self._advance().value
+                if not self._match(TokenType.RBRACKET):
+                    raise SyntaxError("Esperado ']' após tamanho do array")
+                return ArrayType(StringType(), size)
             return StringType()
         elif self._match(TokenType.VOID):
             return VoidType()
@@ -685,11 +694,11 @@ class Parser:
     def _parse_factor(self) -> ASTNode:
         left = self._parse_unary()
         
-        while self._match(TokenType.MULTIPLY, TokenType.DIVIDE):
+        while self._match(TokenType.MULTIPLY, TokenType.DIVIDE, TokenType.MODULO):
             operator = self.tokens[self.position - 1].type
             right = self._parse_unary()
             left = BinaryOpNode(left, operator, right)
-            
+        
         return left
     
     def _parse_unary(self) -> ASTNode:
@@ -777,13 +786,16 @@ class Parser:
                 if not self._check(TokenType.RBRACKET):
                     if not self._match(TokenType.COMMA):
                         raise SyntaxError("Esperado ',' entre elementos do array")
-            
             if not self._match(TokenType.RBRACKET):
                 raise SyntaxError("Esperado ']' para fechar array")
-            
             # Inferir tipo do array baseado nos elementos
-            if elements and isinstance(elements[0], FloatNode):
-                return ArrayNode(elements, FloatType())
+            if elements:
+                if isinstance(elements[0], FloatNode):
+                    return ArrayNode(elements, FloatType())
+                elif isinstance(elements[0], StringNode):
+                    return ArrayNode(elements, StringType())
+                else:
+                    return ArrayNode(elements, IntType())
             else:
                 return ArrayNode(elements, IntType())
         
@@ -835,7 +847,7 @@ class LLVMCodeGenerator:
         self.int_type = ir.IntType(64)
         self.float_type = ir.DoubleType()
         self.char_type = ir.IntType(8)
-        self.string_type = self.char_type.as_pointer()
+        self.string_type = ir.IntType(8).as_pointer()  # Garante i8*
         self.void_type = ir.VoidType()
         
         # Declarar funções externas
@@ -940,6 +952,10 @@ class LLVMCodeGenerator:
                 self.setconsolecp.calling_convention = 'ccc'
                 self.setconsolecp.linkage = 'external'
     
+        # fmod para float módulo
+        fmod_ty = ir.FunctionType(self.float_type, [self.float_type, self.float_type])
+        self.fmod = ir.Function(self.module, fmod_ty, name="fmod")
+    
     def _convert_type(self, ml_type: Type) -> ir.Type:
         """Converte tipo MiniLang para tipo LLVM"""
         if isinstance(ml_type, IntType):
@@ -1001,21 +1017,102 @@ class LLVMCodeGenerator:
             utf8_codepage = ir.Constant(ir.IntType(32), 65001)
             self.builder.call(self.setconsolecp, [utf8_codepage])
     
+    def _eval_constant(self, node):
+        """Avalia um nó de valor constante para inicialização de globais."""
+        if isinstance(node, NumberNode):
+            return node.value
+        elif isinstance(node, FloatNode):
+            return node.value
+        elif isinstance(node, StringNode):
+            return node.value
+        elif isinstance(node, ArrayNode):
+            return [self._eval_constant(e) for e in node.elements]
+        elif isinstance(node, ZerosNode):
+            if isinstance(node.element_type, IntType):
+                return [0] * node.size
+            elif isinstance(node.element_type, FloatType):
+                return [0.0] * node.size
+            elif isinstance(node.element_type, StringType) or isinstance(node.element_type, StrType):
+                return [None] * node.size
+            else:
+                return [None] * node.size
+        elif isinstance(node, BinaryOpNode):
+            # Suporte para expressões binárias simples em constantes
+            left = self._eval_constant(node.left)
+            right = self._eval_constant(node.right)
+            
+            if node.operator == TokenType.PLUS:
+                return left + right
+            elif node.operator == TokenType.MINUS:
+                return left - right
+            elif node.operator == TokenType.MULTIPLY:
+                return left * right
+            elif node.operator == TokenType.DIVIDE:
+                return left / right
+            else:
+                raise Exception(f"Operador não suportado em constante global: {node.operator}")
+        else:
+            raise Exception(f"Valor inicial de global não suportado: {node}")
+
     def _declare_global_variable(self, node: AssignmentNode):
         """Declara uma variável global"""
         var_type = self._convert_type(node.var_type)
-        
         # Criar variável global
         if isinstance(node.var_type, ArrayType):
             # Para arrays, precisamos inicializar com o tamanho correto
             if node.var_type.size:
                 elem_type = self._convert_type(node.var_type.element_type)
-                array_type = ir.ArrayType(elem_type, node.var_type.size)
-                gv = ir.GlobalVariable(self.module, array_type, name=node.identifier)
-                if isinstance(node.var_type.element_type, FloatType):
-                    gv.initializer = ir.Constant(array_type, [0.0] * node.var_type.size)
+                # Corrigir: para array de string, usar array de ponteiros para char
+                if isinstance(node.var_type.element_type, StringType) or isinstance(node.var_type.element_type, StrType):
+                    array_type = ir.ArrayType(self.char_type.as_pointer(), node.var_type.size)
+                    gv = ir.GlobalVariable(self.module, array_type, name=node.identifier)
+                    if node.value:
+                        init = self._eval_constant(node.value)
+                        llvm_ptrs = []
+                        for idx, v in enumerate(init):
+                            if v is None:
+                                llvm_ptrs.append(ir.Constant(self.char_type.as_pointer(), None))
+                            elif v == "":
+                                # Criar string global vazia
+                                str_bytes = b"\0"
+                                str_type = ir.ArrayType(self.char_type, 1)
+                                str_name = f"{node.identifier}_empty_{idx}"
+                                str_global = ir.GlobalVariable(self.module, str_type, name=str_name)
+                                str_global.linkage = 'internal'
+                                str_global.global_constant = True
+                                str_global.initializer = ir.Constant(str_type, bytearray(str_bytes))
+                                ptr = str_global.bitcast(self.char_type.as_pointer())
+                                llvm_ptrs.append(ptr)
+                            else:
+                                # Criar string global para o valor
+                                str_bytes = (v + '\0').encode('utf8')
+                                str_type = ir.ArrayType(self.char_type, len(str_bytes))
+                                str_name = f"{node.identifier}_{idx}"
+                                str_global = ir.GlobalVariable(self.module, str_type, name=str_name)
+                                str_global.linkage = 'internal'
+                                str_global.global_constant = True
+                                str_global.initializer = ir.Constant(str_type, bytearray(str_bytes))
+                                ptr = str_global.bitcast(self.char_type.as_pointer())
+                                llvm_ptrs.append(ptr)
+                        gv.initializer = ir.Constant(array_type, llvm_ptrs)
+                    else:
+                        gv.initializer = ir.Constant(array_type, [ir.Constant(self.char_type.as_pointer(), None)] * node.var_type.size)
+                elif isinstance(node.var_type.element_type, FloatType):
+                    array_type = ir.ArrayType(elem_type, node.var_type.size)
+                    gv = ir.GlobalVariable(self.module, array_type, name=node.identifier)
+                    if node.value:
+                        init = self._eval_constant(node.value)
+                        gv.initializer = ir.Constant(array_type, init)
+                    else:
+                        gv.initializer = ir.Constant(array_type, [0.0] * node.var_type.size)
                 else:
-                    gv.initializer = ir.Constant(array_type, [0] * node.var_type.size)
+                    array_type = ir.ArrayType(elem_type, node.var_type.size)
+                    gv = ir.GlobalVariable(self.module, array_type, name=node.identifier)
+                    if node.value:
+                        init = self._eval_constant(node.value)
+                        gv.initializer = ir.Constant(array_type, init)
+                    else:
+                        gv.initializer = ir.Constant(array_type, [0] * node.var_type.size)
             else:
                 # Array sem tamanho definido, usar ponteiro
                 gv = ir.GlobalVariable(self.module, var_type, name=node.identifier)
@@ -1023,12 +1120,19 @@ class LLVMCodeGenerator:
         else:
             gv = ir.GlobalVariable(self.module, var_type, name=node.identifier)
             if isinstance(node.var_type, IntType):
-                gv.initializer = ir.Constant(var_type, 0)
+                if node.value:
+                    init = self._eval_constant(node.value)
+                    gv.initializer = ir.Constant(var_type, init)
+                else:
+                    gv.initializer = ir.Constant(var_type, 0)
             elif isinstance(node.var_type, FloatType):
-                gv.initializer = ir.Constant(var_type, 0.0)
+                if node.value:
+                    init = self._eval_constant(node.value)
+                    gv.initializer = ir.Constant(var_type, init)
+                else:
+                    gv.initializer = ir.Constant(var_type, 0.0)
             else:
                 gv.initializer = ir.Constant(var_type, None)
-        
         gv.linkage = 'internal'
         self.global_vars[node.identifier] = gv
         self.type_map[node.identifier] = node.var_type
@@ -1205,15 +1309,14 @@ class LLVMCodeGenerator:
         self.builder.call(self.printf, [fmt_ptr, value])
     
     def _print_array(self, array_name: str):
-        """Imprime um array de forma formatada"""
+        """Imprime um array de forma formatada (int, float ou string)"""
         # Obter informações sobre o array
         array_type = self.type_map.get(array_name)
         if not isinstance(array_type, ArrayType):
             return
-        
-        # Por enquanto, vamos assumir um tamanho fixo de 5 para arrays
+        elem_type = array_type.element_type
         array_size = array_type.size if array_type.size else 5
-        
+
         # Obter ponteiro do array
         if array_name in self.local_vars:
             var = self.local_vars[array_name]
@@ -1221,10 +1324,9 @@ class LLVMCodeGenerator:
             var = self.global_vars[array_name]
         else:
             return
-        
-        # Strings de formatação
+
         zero = ir.Constant(ir.IntType(32), 0)
-        
+
         # String "["
         bracket_open_str = "[\0"
         bracket_open_bytes = bracket_open_str.encode('utf8')
@@ -1235,7 +1337,7 @@ class LLVMCodeGenerator:
         bracket_open_global.global_constant = True
         bracket_open_global.initializer = ir.Constant(bracket_open_type, bytearray(bracket_open_bytes))
         bracket_open_ptr = self.builder.gep(bracket_open_global, [zero, zero], inbounds=True)
-        
+
         # String "%s"
         fmt_s_str = "%s\0"
         fmt_s_bytes = fmt_s_str.encode('utf8')
@@ -1246,21 +1348,28 @@ class LLVMCodeGenerator:
         fmt_s_global.global_constant = True
         fmt_s_global.initializer = ir.Constant(fmt_s_type, bytearray(fmt_s_bytes))
         fmt_s_ptr = self.builder.gep(fmt_s_global, [zero, zero], inbounds=True)
-        
+
         # Imprimir "["
         self.builder.call(self.printf, [fmt_s_ptr, bracket_open_ptr])
-        
-        # String para números "%lld"
-        fmt_num_str = "%lld\0"
-        fmt_num_bytes = fmt_num_str.encode('utf8')
-        fmt_num_type = ir.ArrayType(self.char_type, len(fmt_num_bytes))
-        fmt_num_name = f"fmt_num_arr_{len(self.module.globals)}"
-        fmt_num_global = ir.GlobalVariable(self.module, fmt_num_type, name=fmt_num_name)
-        fmt_num_global.linkage = 'internal'
-        fmt_num_global.global_constant = True
-        fmt_num_global.initializer = ir.Constant(fmt_num_type, bytearray(fmt_num_bytes))
-        fmt_num_ptr = self.builder.gep(fmt_num_global, [zero, zero], inbounds=True)
-        
+
+        # String de formatação para elementos
+        if isinstance(elem_type, IntType):
+            fmt_elem_str = "%lld\0"
+        elif isinstance(elem_type, FloatType):
+            fmt_elem_str = "%f\0"
+        elif isinstance(elem_type, StringType) or isinstance(elem_type, StrType):
+            fmt_elem_str = "%s\0"
+        else:
+            fmt_elem_str = "%p\0"
+        fmt_elem_bytes = fmt_elem_str.encode('utf8')
+        fmt_elem_type = ir.ArrayType(self.char_type, len(fmt_elem_bytes))
+        fmt_elem_name = f"fmt_elem_{len(self.module.globals)}"
+        fmt_elem_global = ir.GlobalVariable(self.module, fmt_elem_type, name=fmt_elem_name)
+        fmt_elem_global.linkage = 'internal'
+        fmt_elem_global.global_constant = True
+        fmt_elem_global.initializer = ir.Constant(fmt_elem_type, bytearray(fmt_elem_bytes))
+        fmt_elem_ptr = self.builder.gep(fmt_elem_global, [zero, zero], inbounds=True)
+
         # String ", "
         comma_str = ", \0"
         comma_bytes = comma_str.encode('utf8')
@@ -1271,27 +1380,23 @@ class LLVMCodeGenerator:
         comma_global.global_constant = True
         comma_global.initializer = ir.Constant(comma_type, bytearray(comma_bytes))
         comma_ptr = self.builder.gep(comma_global, [zero, zero], inbounds=True)
-        
+
         # Obter ponteiro do array
         if isinstance(var, ir.Argument) and isinstance(var.type, ir.PointerType):
             array_ptr = var
         elif isinstance(var, ir.GlobalVariable) and isinstance(var.type.pointee, ir.ArrayType):
-            # Variável global que é array
             array_ptr = self.builder.gep(var, [zero, zero], inbounds=True)
         else:
             array_ptr = self.builder.load(var)
-        
+
         # Imprimir cada elemento
         for i in range(array_size):
             if i > 0:
-                # Imprimir vírgula
                 self.builder.call(self.printf, [fmt_s_ptr, comma_ptr])
-            
-            # Obter e imprimir elemento
             elem_ptr = self.builder.gep(array_ptr, [ir.Constant(self.int_type, i)], inbounds=True)
             elem_value = self.builder.load(elem_ptr)
-            self.builder.call(self.printf, [fmt_num_ptr, elem_value])
-        
+            self.builder.call(self.printf, [fmt_elem_ptr, elem_value])
+
         # String "]\n"
         bracket_close_str = "]\n\0"
         bracket_close_bytes = bracket_close_str.encode('utf8')
@@ -1302,8 +1407,6 @@ class LLVMCodeGenerator:
         bracket_close_global.global_constant = True
         bracket_close_global.initializer = ir.Constant(bracket_close_type, bytearray(bracket_close_bytes))
         bracket_close_ptr = self.builder.gep(bracket_close_global, [zero, zero], inbounds=True)
-        
-        # Imprimir "]\n"
         self.builder.call(self.printf, [fmt_s_ptr, bracket_close_ptr])
     
     def _generate_if(self, node: IfNode):
@@ -1399,24 +1502,41 @@ class LLVMCodeGenerator:
         elif isinstance(node, ArrayNode):
             # Alocar memória para o array
             num_elements = len(node.elements)
-            elem_size = 8 if isinstance(node.element_type, (IntType, FloatType)) else 1
-            array_size = ir.Constant(self.int_type, num_elements * elem_size)
-            array_ptr = self.builder.call(self.malloc, [array_size])
-            
-            # Cast para ponteiro do tipo correto
             if isinstance(node.element_type, IntType):
+                elem_size = 8
+                array_size = ir.Constant(self.int_type, num_elements * elem_size)
+                array_ptr = self.builder.call(self.malloc, [array_size])
                 typed_ptr = self.builder.bitcast(array_ptr, self.int_type.as_pointer())
             elif isinstance(node.element_type, FloatType):
+                elem_size = 8
+                array_size = ir.Constant(self.int_type, num_elements * elem_size)
+                array_ptr = self.builder.call(self.malloc, [array_size])
                 typed_ptr = self.builder.bitcast(array_ptr, self.float_type.as_pointer())
+            elif isinstance(node.element_type, StringType) or isinstance(node.element_type, StrType):
+                elem_size = 8  # ponteiro de 64 bits
+                array_size = ir.Constant(self.int_type, num_elements * elem_size)
+                array_ptr = self.builder.call(self.malloc, [array_size])
+                # Ponteiro para ponteiro de char (i8**)
+                typed_ptr = self.builder.bitcast(array_ptr, self.char_type.as_pointer().as_pointer())
             else:
+                elem_size = 1
+                array_size = ir.Constant(self.int_type, num_elements * elem_size)
+                array_ptr = self.builder.call(self.malloc, [array_size])
                 typed_ptr = array_ptr
-            
+
             # Inicializar elementos
             for i, elem in enumerate(node.elements):
                 value = self._generate_expression(elem)
-                elem_ptr = self.builder.gep(typed_ptr, [ir.Constant(self.int_type, i)], inbounds=True)
-                self.builder.store(value, elem_ptr)
-            
+                if isinstance(node.element_type, StringType) or isinstance(node.element_type, StrType):
+                    value = self.builder.bitcast(value, self.char_type.as_pointer())
+                    elem_ptr = self.builder.gep(typed_ptr, [ir.Constant(self.int_type, i)], inbounds=True)
+                    # Forçar o ponteiro do elemento para i8** explicitamente
+                    elem_ptr = self.builder.bitcast(elem_ptr, self.char_type.as_pointer().as_pointer())
+                    self.builder.store(value, elem_ptr)
+                else:
+                    elem_ptr = self.builder.gep(typed_ptr, [ir.Constant(self.int_type, i)], inbounds=True)
+                    self.builder.store(value, elem_ptr)
+
             return typed_ptr
             
         elif isinstance(node, ZerosNode):
@@ -1535,24 +1655,27 @@ class LLVMCodeGenerator:
                 var = self.global_vars[node.array_name]
             else:
                 raise NameError(f"Array '{node.array_name}' não definido")
-            
             index = self._generate_expression(node.index)
-            
             # Se a variável já é um ponteiro (parâmetro de função), usar diretamente
             if isinstance(var, ir.Argument) and isinstance(var.type, ir.PointerType):
                 array_ptr = var
             elif isinstance(var, ir.GlobalVariable) and isinstance(var.type.pointee, ir.ArrayType):
-                # Variável global que é array
                 zero = ir.Constant(ir.IntType(32), 0)
                 array_ptr = self.builder.gep(var, [zero, zero], inbounds=True)
             else:
-                # Caso contrário, carregar o ponteiro
                 array_ptr = self.builder.load(var)
-            
-            # Calcular endereço do elemento
+            # Se for string (i8*), acessar como caractere (cast de segurança)
+            if (isinstance(array_ptr.type, ir.PointerType) and array_ptr.type.pointee == self.char_type) or (
+                hasattr(node, 'element_type') and isinstance(node.element_type, StringType)):
+                if not (isinstance(array_ptr.type, ir.PointerType) and array_ptr.type.pointee == self.char_type):
+                    array_ptr = self.builder.bitcast(array_ptr, self.char_type.as_pointer())
+                # Converter índice para i32 para compatibilidade com ponteiros i8*
+                if index.type != ir.IntType(32):
+                    index = self.builder.sext(index, ir.IntType(32)) if index.type.width < 32 else self.builder.trunc(index, ir.IntType(32))
+                elem_ptr = self.builder.gep(array_ptr, [index], inbounds=True)
+                return self.builder.load(elem_ptr)
+            # Caso contrário, array normal
             elem_ptr = self.builder.gep(array_ptr, [index], inbounds=True)
-            
-            # Carregar valor
             return self.builder.load(elem_ptr)
             
         elif isinstance(node, IdentifierNode):
@@ -1576,6 +1699,19 @@ class LLVMCodeGenerator:
                 raise NameError(f"Variável '{node.name}' não definida")
             
         elif isinstance(node, CallNode):
+            # Função embutida 'ord'
+            if node.function_name == 'ord':
+                arg = self._generate_expression(node.arguments[0])
+                # Se o argumento já é um char (i8), apenas fazer zext para int
+                if arg.type == self.char_type:
+                    return self.builder.zext(arg, self.int_type)
+                # Se é um ponteiro para char, carregar o primeiro caractere
+                elif isinstance(arg.type, ir.PointerType) and arg.type.pointee == self.char_type:
+                    first_char = self.builder.load(arg)
+                    return self.builder.zext(first_char, self.int_type)
+                else:
+                    # Caso inesperado, tentar converter
+                    return self.builder.zext(arg, self.int_type)
             # Verificar se é uma função externa de casting
             if node.function_name == 'to_str':
                 # Determinar qual versão de to_str usar baseado no tipo do argumento
@@ -1673,6 +1809,11 @@ class LLVMCodeGenerator:
                     return self.builder.fdiv(left, right, name="fdiv")
                 else:
                     return self.builder.sdiv(left, right, name="div")
+            elif node.operator == TokenType.MODULO:
+                if is_float_op:
+                    return self.builder.call(self.fmod, [left, right], name="fmod")
+                else:
+                    return self.builder.srem(left, right, name="mod")
                 
             # Comparações
             elif node.operator == TokenType.GT:
@@ -1695,16 +1836,29 @@ class LLVMCodeGenerator:
                     return self.builder.fcmp_ordered('<=', left, right, name="flte")
                 else:
                     return self.builder.icmp_signed('<=', left, right, name="lte")
-            elif node.operator == TokenType.EQ:
-                if is_float_op:
-                    return self.builder.fcmp_ordered('==', left, right, name="feq")
+            elif node.operator == TokenType.EQ or node.operator == TokenType.NEQ:
+                # Para comparações de char, garantir que ambos são i8
+                if isinstance(left.type, ir.PointerType) and left.type.pointee == self.char_type:
+                    left = self.builder.load(left)
+                if isinstance(right.type, ir.PointerType) and right.type.pointee == self.char_type:
+                    right = self.builder.load(right)
+                
+                # Para comparações de char (i8), usar icmp sem sinal
+                if left.type == self.char_type and right.type == self.char_type:
+                    if node.operator == TokenType.EQ:
+                        return self.builder.icmp_unsigned('==', left, right, name="eq")
+                    else:
+                        return self.builder.icmp_unsigned('!=', left, right, name="neq")
+                elif is_float_op:
+                    if node.operator == TokenType.EQ:
+                        return self.builder.fcmp_ordered('==', left, right, name="feq")
+                    else:
+                        return self.builder.fcmp_ordered('!=', left, right, name="fneq")
                 else:
-                    return self.builder.icmp_signed('==', left, right, name="eq")
-            elif node.operator == TokenType.NEQ:
-                if is_float_op:
-                    return self.builder.fcmp_ordered('!=', left, right, name="fneq")
-                else:
-                    return self.builder.icmp_signed('!=', left, right, name="neq")
+                    if node.operator == TokenType.EQ:
+                        return self.builder.icmp_signed('==', left, right, name="eq")
+                    else:
+                        return self.builder.icmp_signed('!=', left, right, name="neq")
                 
         raise NotImplementedError(f"Tipo de nó não implementado: {type(node)}")
 
@@ -1861,13 +2015,13 @@ def print_usage():
     """Imprime informações de uso do programa."""
     print("MiniLang Compiler v2.0")
     print("Uso:")
-    print("  python main.py <arquivo.ml>                    # Executar programa")
-    print("  python main.py --compile <arquivo.ml>          # Gerar arquivo objeto")
-    print("  python main.py --help                          # Mostrar esta ajuda")
+    print("  python compiler.py <arquivo.ml>                    # Executar programa")
+    print("  python compiler.py --compile <arquivo.ml>          # Gerar arquivo objeto")
+    print("  python compiler.py --help                          # Mostrar esta ajuda")
     print("")
     print("Exemplos:")
-    print("  python main.py programa.ml")
-    print("  python main.py --compile programa.ml")
+    print("  python compiler.py programa.ml")
+    print("  python compiler.py --compile programa.ml")
 
 # Exemplo de uso
 if __name__ == "__main__":
