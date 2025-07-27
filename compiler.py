@@ -461,6 +461,13 @@ class StructAssignmentNode(ASTNode):
     value: ASTNode
 
 @dataclass
+class NestedStructAssignmentNode(ASTNode):
+    """Nó para atribuições aninhadas de struct: struct.campo.subcampo = valor"""
+    struct_name: str
+    field_path: List[str]  # Lista de campos para navegar: ["endereco", "rua"]
+    value: ASTNode
+
+@dataclass
 class StructConstructorNode(ASTNode):
     """Nó para construtores de struct: StructName(arg1, arg2, ...)"""
     struct_name: str
@@ -482,6 +489,11 @@ class NullNode(ASTNode):
 class UnaryOpNode(ASTNode):
     operator: TokenType
     operand: ASTNode
+
+@dataclass
+class ReferenceNode(ASTNode):
+    """Nó para referências: ref expressao"""
+    expression: ASTNode
 
 # Parser
 class Parser:
@@ -643,6 +655,19 @@ class Parser:
                     if field_name.type != TokenType.IDENTIFIER:
                         raise SyntaxError("Esperado nome do campo após '.'")
                     
+                    # Verificar se há acesso a array após o campo (ex: struct.campo[indice])
+                    if self._check(TokenType.LBRACKET):
+                        self._advance()  # [
+                        index_expr = self._parse_expression()
+                        if self._match(TokenType.RBRACKET) and self._check(TokenType.ASSIGN):
+                            # É uma atribuição de array de campo de struct
+                            self.position = saved_pos
+                            return self._parse_array_assignment()
+                        else:
+                            # É apenas um acesso de array, voltar e processar como expressão
+                            self.position = saved_pos
+                            return self._parse_expression()
+                    
                     # Verificar se há mais níveis de acesso (ex: pessoa.endereco.rua)
                     while self._check(TokenType.DOT):
                         self._advance()  # .
@@ -698,7 +723,25 @@ class Parser:
         return AssignmentNode(identifier.value, var_type, value, is_global)
     
     def _parse_array_assignment(self) -> ArrayAssignmentNode:
-        array_name = self._advance().value
+        # Construir o nome do array (pode ser composto como "aluno.notas")
+        array_name_parts = []
+        
+        # Primeiro identificador
+        first_token = self._advance()
+        if first_token.type != TokenType.IDENTIFIER:
+            self._error("Esperado identificador para nome do array")
+        array_name_parts.append(first_token.value)
+        
+        # Verificar se há mais partes (ex: .notas)
+        while self._check(TokenType.DOT):
+            self._advance()  # Consumir o ponto
+            next_token = self._advance()
+            if next_token.type != TokenType.IDENTIFIER:
+                self._error("Esperado identificador após '.'")
+            array_name_parts.append(next_token.value)
+        
+        # Construir o nome completo
+        array_name = ".".join(array_name_parts)
         
         if not self._match(TokenType.LBRACKET):
             self._error("Esperado '[' para acesso ao array")
@@ -879,6 +922,9 @@ class Parser:
         elif self._match(TokenType.NOT):
             expr = self._parse_unary()
             return UnaryOpNode(TokenType.NOT, expr)
+        elif self._match(TokenType.REF):
+            expr = self._parse_unary()
+            return ReferenceNode(expr)
             
         return self._parse_postfix()
     
@@ -892,6 +938,9 @@ class Parser:
                     raise SyntaxError("Esperado ']' após índice")
                 if isinstance(expr, IdentifierNode):
                     expr = ArrayAccessNode(expr.name, index)
+                elif isinstance(expr, StructAccessNode):
+                    # Acesso a array de campo de struct: struct.campo[indice]
+                    expr = ArrayAccessNode(f"{expr.struct_name}.{expr.field_name}", index)
                 else:
                     raise SyntaxError("Acesso de array inválido")
             elif self._match(TokenType.DOT):
@@ -1072,7 +1121,7 @@ class Parser:
         
         return StructDefinitionNode(name.value, fields)
     
-    def _parse_struct_assignment(self) -> StructAssignmentNode:
+    def _parse_struct_assignment(self) -> Union[StructAssignmentNode, NestedStructAssignmentNode]:
         """Parse atribuição de campo de struct: struct.campo = valor ou struct.campo.subcampo = valor"""
         struct_name = self._advance()
         if struct_name.type != TokenType.IDENTIFIER:
@@ -1085,19 +1134,27 @@ class Parser:
         if field_name.type != TokenType.IDENTIFIER:
             raise SyntaxError("Esperado nome do campo após '.'")
         
+        # Coletar todos os campos do caminho
+        field_path = [field_name.value]
+        
         # Verificar se há mais níveis de acesso (ex: pessoa.endereco.rua)
         while self._match(TokenType.DOT):
             next_field = self._advance()
             if next_field.type != TokenType.IDENTIFIER:
                 raise SyntaxError("Esperado nome do campo após '.'")
-            field_name.value = f"{field_name.value}.{next_field.value}"
+            field_path.append(next_field.value)
         
         if not self._match(TokenType.ASSIGN):
             raise SyntaxError("Esperado '=' após nome do campo")
         
         value = self._parse_expression()
         
-        return StructAssignmentNode(struct_name.value, field_name.value, value)
+        # Se há apenas um campo, usar StructAssignmentNode (compatibilidade)
+        if len(field_path) == 1:
+            return StructAssignmentNode(struct_name.value, field_path[0], value)
+        else:
+            # Se há múltiplos campos, usar NestedStructAssignmentNode
+            return NestedStructAssignmentNode(struct_name.value, field_path, value)
 
 # Gerador de código LLVM
 class LLVMCodeGenerator:
@@ -1265,11 +1322,16 @@ class LLVMCodeGenerator:
         elif isinstance(ml_type, VoidType):
             return self.void_type
         elif isinstance(ml_type, ReferenceType):
-            # Abordagem conservadora para evitar recursão infinita
+            # Para referências, converter o tipo alvo e retornar ponteiro
             if isinstance(ml_type.target_type, StructType):
-                # Para referências a structs, usar ponteiro para void como placeholder
-                # Isso evita recursão infinita e será resolvido posteriormente
-                return ir.IntType(8).as_pointer()  # void* equivalente
+                # Para referências a structs, verificar se o struct já foi definido
+                if ml_type.target_type.name in self.struct_types:
+                    return self.struct_types[ml_type.target_type.name].as_pointer()
+                else:
+                    # Struct não definido ainda, criar um tipo opaco
+                    opaque_type = ir.LiteralStructType([], packed=False)
+                    self.struct_types[ml_type.target_type.name] = opaque_type
+                    return opaque_type.as_pointer()
             else:
                 # Para outros tipos, converter normalmente
                 target_type = self._convert_type(ml_type.target_type)
@@ -1293,6 +1355,9 @@ class LLVMCodeGenerator:
         for stmt in ast.statements:
             if isinstance(stmt, StructDefinitionNode):
                 self._process_struct_definition(stmt)
+        
+        # Segunda passada: atualizar tipos de referência com os tipos corretos dos structs
+        self._update_reference_types()
         
         # Depois, declarar todas as variáveis globais e funções
         for stmt in ast.statements:
@@ -1523,9 +1588,27 @@ class LLVMCodeGenerator:
         self.type_map[node.identifier] = node.var_type
     
     def _declare_function(self, node: FunctionNode):
-        # Converter tipos dos parâmetros
-        param_types = [self._convert_type(param_type) for _, param_type in node.params]
-        return_type = self._convert_type(node.return_type)
+        # Converter tipos dos parâmetros com tratamento especial para referências
+        param_types = []
+        for param_name, param_type in node.params:
+            if isinstance(param_type, ReferenceType) and isinstance(param_type.target_type, StructType):
+                # Para referências a structs, usar ponteiro para o tipo correto
+                if param_type.target_type.name in self.struct_types:
+                    param_types.append(self.struct_types[param_type.target_type.name].as_pointer())
+                else:
+                    # Struct não definido, usar ponteiro para void temporariamente
+                    param_types.append(ir.IntType(8).as_pointer())
+            else:
+                param_types.append(self._convert_type(param_type))
+        
+        # Converter tipo de retorno
+        if isinstance(node.return_type, ReferenceType) and isinstance(node.return_type.target_type, StructType):
+            if node.return_type.target_type.name in self.struct_types:
+                return_type = self.struct_types[node.return_type.target_type.name].as_pointer()
+            else:
+                return_type = ir.IntType(8).as_pointer()
+        else:
+            return_type = self._convert_type(node.return_type)
         
         func_ty = ir.FunctionType(return_type, param_types)
         
@@ -1621,10 +1704,12 @@ class LLVMCodeGenerator:
             self.struct_auto_references = {}
         if auto_references:
             self.struct_auto_references[node.name] = auto_references
-        
-        # Validar referências circulares após definir o struct
-        if not self._validate_circular_references(node.name):
-            raise ValueError(f"Struct '{node.name}' tem referências circulares inválidas que podem causar recursão infinita")
+    
+    def _update_reference_types(self):
+        """Atualiza tipos de referência com os tipos corretos dos structs após definição"""
+        # Esta função será implementada se necessário para resolver tipos de referência
+        # que dependem de structs definidos posteriormente
+        pass
     
     def _generate_function(self, node: FunctionNode):
         func = self.functions[node.name]
@@ -1697,6 +1782,8 @@ class LLVMCodeGenerator:
             pass
         elif isinstance(node, StructAssignmentNode):
             self._generate_struct_assignment(node)
+        elif isinstance(node, NestedStructAssignmentNode):
+            self._generate_nested_struct_assignment(node)
         elif isinstance(node, StructConstructorNode):
             self._generate_struct_constructor(node)
         else:
@@ -2255,6 +2342,31 @@ class LLVMCodeGenerator:
             else:
                 self.builder.ret(ir.Constant(self.int_type, 0))
     
+    def _convert_array_args_for_function_call(self, func: ir.Function, args: List[ir.Value]) -> List[ir.Value]:
+        """Converte arrays estáticos para ponteiros quando necessário para chamadas de função"""
+        converted_args = []
+        for i, (arg, param_type) in enumerate(zip(args, func.args)):
+            # Se o argumento é um ponteiro para array estático e o parâmetro espera ponteiro para elemento
+            if (isinstance(arg.type, ir.PointerType) and
+                isinstance(arg.type.pointee, ir.ArrayType) and
+                isinstance(param_type.type, ir.PointerType) and
+                arg.type.pointee.element == param_type.type.pointee):
+                # GEP [0,0] para obter ponteiro para o primeiro elemento
+                zero = ir.Constant(ir.IntType(32), 0)
+                array_ptr = self.builder.gep(arg, [zero, zero], inbounds=True)
+                converted_args.append(array_ptr)
+            # Se o argumento é um array estático (valor), mas o parâmetro espera ponteiro
+            elif (isinstance(arg.type, ir.ArrayType) and 
+                  isinstance(param_type.type, ir.PointerType) and
+                  arg.type.element == param_type.type.pointee):
+                # Não é o ideal, mas mantém compatibilidade para casos antigos
+                element_ptr_type = ir.PointerType(arg.type.element)
+                array_ptr = self.builder.bitcast(arg, element_ptr_type)
+                converted_args.append(array_ptr)
+            else:
+                converted_args.append(arg)
+        return converted_args
+
     def _generate_expression(self, node: ASTNode, expected_type: ir.Type = None) -> ir.Value:
         if node is None:
             raise ValueError("Tentativa de gerar código para nó None")
@@ -2291,17 +2403,46 @@ class LLVMCodeGenerator:
             elif expected_type and isinstance(expected_type, ir.IntType):
                 return ir.Constant(expected_type, 0)
             else:
-                return ir.Constant(self.int_type, 0)
+                # Para null sem tipo específico, retornar ponteiro nulo genérico
+                return ir.Constant(ir.IntType(8).as_pointer(), None)
+            
+        elif isinstance(node, ReferenceNode):
+            # Gerar referência: ref expressao
+            expr_value = self._generate_expression(node.expression)
+            # Para referências, retornar o endereço da expressão
+            if isinstance(expr_value.type, ir.PointerType):
+                return expr_value
+            else:
+                # Se não é um ponteiro, retornar o valor como está
+                return expr_value
             
         elif isinstance(node, StructAccessNode):
             # Acessar campo de struct (suporta acesso aninhado)
+            # node.struct_name é o nome da variável (ex: "node")
+            # node.field_name é o nome do campo (ex: "valor")
+            
+            # Procurar a variável primeiro localmente, depois globalmente
             if node.struct_name in self.local_vars:
                 struct_ptr = self.local_vars[node.struct_name]
+                # Verificar se é um parâmetro de função (ponteiro para ponteiro)
+                if isinstance(struct_ptr, ir.Argument):
+                    # É um parâmetro de função, precisa dereferenciar
+                    struct_ptr = self.builder.load(struct_ptr)
+                elif (node.struct_name in self.type_map and 
+                      isinstance(self.type_map[node.struct_name], ReferenceType)):
+                    # É uma referência, precisa dereferenciar
+                    struct_ptr = self.builder.load(struct_ptr)
+                # NOVO: Se for um alloca (variável local), fazer load
+                import llvmlite.ir.instructions
+                if isinstance(struct_ptr, llvmlite.ir.instructions.AllocaInstr):
+                    struct_ptr = self.builder.load(struct_ptr)
+            elif node.struct_name in self.global_vars:
+                struct_ptr = self.global_vars[node.struct_name]
             else:
-                # Procurar nas variáveis globais
+                # Procurar nas variáveis globais do módulo
                 struct_ptr = self.module.globals.get(node.struct_name)
                 if struct_ptr is None:
-                    raise NameError(f"Struct '{node.struct_name}' não encontrado")
+                    raise NameError(f"Variável '{node.struct_name}' não encontrada")
             
             # Determinar o tipo de struct baseado na variável
             struct_type_name = None
@@ -2313,7 +2454,9 @@ class LLVMCodeGenerator:
                     struct_type_name = var_type.target_type.name
             
             if not struct_type_name or struct_type_name not in self.struct_fields:
-                raise NameError(f"Struct '{struct_type_name}' não encontrado")
+                # Se não encontrou o tipo, tentar inferir do nome da variável
+                # Isso é um fallback para casos onde o tipo não foi mapeado corretamente
+                raise NameError(f"Não foi possível determinar o tipo da variável '{node.struct_name}'")
             
             # Fazer cast do ponteiro para void para o tipo correto do struct
             if struct_type_name in self.struct_types:
@@ -2348,8 +2491,11 @@ class LLVMCodeGenerator:
                             field_type = self.struct_field_types[current_struct_type][field_name]
                             if isinstance(field_type, StructType):
                                 current_struct_type = field_type.name
+                            elif isinstance(field_type, ReferenceType) and isinstance(field_type.target_type, StructType):
+                                # É uma referência para um struct
+                                current_struct_type = field_type.target_type.name
                             else:
-                                raise NameError(f"Campo '{field_name}' não é um struct")
+                                raise NameError(f"Campo '{field_name}' não é um struct ou referência para struct")
                         else:
                             # Fallback: usar o nome do campo como tipo
                             current_struct_type = field_name
@@ -2367,7 +2513,22 @@ class LLVMCodeGenerator:
                 # Acessar o campo usando getelementptr diretamente no ponteiro
                 field_ptr = self.builder.gep(struct_ptr, [ir.Constant(ir.IntType(32), 0), ir.Constant(ir.IntType(32), field_index)])
                 
-                # Carregar o valor do campo
+                # Verificar se o campo é uma referência (ref TreeNode)
+                if (hasattr(self, 'struct_field_types') and 
+                    struct_type_name in self.struct_field_types and 
+                    node.field_name in self.struct_field_types[struct_type_name]):
+                    field_type = self.struct_field_types[struct_type_name][node.field_name]
+                    if isinstance(field_type, ReferenceType) and isinstance(field_type.target_type, StructType):
+                        # É uma referência, carregar o valor do campo (que é um ponteiro)
+                        field_value = self.builder.load(field_ptr)
+                        # Fazer cast para o tipo correto do struct
+                        if field_type.target_type.name in self.struct_types:
+                            struct_type = self.struct_types[field_type.target_type.name]
+                            return self.builder.bitcast(field_value, struct_type.as_pointer())
+                        else:
+                            return field_value
+                
+                # Para outros tipos, carregar o valor do campo
                 return self.builder.load(field_ptr)
         elif isinstance(node, ArrayNode):
             # Alocar memória para o array
@@ -2608,6 +2769,9 @@ class LLVMCodeGenerator:
                 # Se é um parâmetro de função que é array, retornar diretamente
                 if isinstance(var, ir.Argument) and isinstance(var.type, ir.PointerType):
                     return var
+                # Se é um array estático local, retornar o ponteiro (não fazer load)
+                if isinstance(var.type, ir.PointerType) and isinstance(var.type.pointee, ir.ArrayType):
+                    return var
                 # Se é um ponteiro (ref), retornar ponteiro diretamente
                 if isinstance(var.type, ir.PointerType) and var.type.pointee == ir.IntType(8):
                     return self.builder.load(var, name=node.name)
@@ -2652,6 +2816,14 @@ class LLVMCodeGenerator:
                         func = self.to_str_int
                 else:
                     func = self.to_str_int  # default
+                
+                # Gerar argumentos para to_str
+                args = []
+                for arg_node in node.arguments:
+                    arg_value = self._generate_expression(arg_node)
+                    args.append(arg_value)
+                
+                return self.builder.call(func, args)
             elif node.function_name == 'to_int':
                 func = self.to_int
             elif node.function_name == 'to_float':
@@ -2667,41 +2839,24 @@ class LLVMCodeGenerator:
                 if i < len(func.args):
                     expected_type = func.args[i].type
                     
-                    # Se o argumento é um identificador
-                    if isinstance(arg_node, IdentifierNode):
-                        # Verificar se é um array
-                        if arg_node.name in self.type_map:
-                            var_type = self.type_map[arg_node.name]
-                            if isinstance(var_type, ArrayType) and isinstance(expected_type, ir.PointerType):
-                                # É um array sendo passado para função que espera array
-                                if arg_node.name in self.local_vars:
-                                    var = self.local_vars[arg_node.name]
-                                    if isinstance(var, ir.Argument):
-                                        # É um parâmetro de array, usar diretamente
-                                        args.append(var)
-                                    else:
-                                        # É uma variável local de array, obter ponteiro
-                                        zero = ir.Constant(ir.IntType(32), 0)
-                                        args.append(self.builder.gep(var, [zero, zero], inbounds=True))
-                                elif arg_node.name in self.global_vars:
-                                    var = self.global_vars[arg_node.name]
-                                    # Array global, obter ponteiro
-                                    zero = ir.Constant(ir.IntType(32), 0)
-                                    args.append(self.builder.gep(var, [zero, zero], inbounds=True))
-                                else:
-                                    args.append(self._generate_expression(arg_node, expected_type))
-                            else:
-                                # Não é array, gerar normalmente
-                                args.append(self._generate_expression(arg_node, expected_type))
-                        else:
-                            args.append(self._generate_expression(arg_node, expected_type))
-                    else:
-                        # Não é identificador, gerar normalmente
-                        args.append(self._generate_expression(arg_node, expected_type))
+                    # Gerar o argumento
+                    arg_value = self._generate_expression(arg_node, expected_type)
+                    
+                    # Verificar se precisa dereferenciar (ponteiro para ponteiro)
+                    if (isinstance(arg_value.type, ir.PointerType) and 
+                        isinstance(arg_value.type.pointee, ir.PointerType)):
+                        # É um ponteiro para ponteiro, precisamos dereferenciar
+                        arg_value = self.builder.load(arg_value)
+                    
+
+                    
+                    args.append(arg_value)
                 else:
                     # Sem informação de tipo, gerar normalmente
                     args.append(self._generate_expression(arg_node, expected_type))
             
+            # Verificar se há arrays estáticos sendo passados para funções que esperam ponteiros
+            args = self._convert_array_args_for_function_call(func, args)
             return self.builder.call(func, args)
             
         elif isinstance(node, BinaryOpNode):
@@ -2864,9 +3019,245 @@ class LLVMCodeGenerator:
         raise NotImplementedError(f"Tipo de nó não implementado: {type(node)}")
 
     def _generate_struct_assignment(self, node: StructAssignmentNode):
-        # Temporariamente desabilitado devido a problemas de compatibilidade de tipos
-        # TODO: Implementar solução robusta para atribuição de campos
-        raise NotImplementedError("Atribuição de campos de struct temporariamente desabilitada. Use construtores para criar structs completos.")
+        """Gerar código para atribuição de campo de struct: struct.campo = valor"""
+        # Procurar a variável struct primeiro localmente, depois globalmente
+        if node.struct_name in self.local_vars:
+            struct_ptr = self.local_vars[node.struct_name]
+            # Verificar se é um parâmetro de função (ponteiro para ponteiro)
+            if isinstance(struct_ptr, ir.Argument):
+                # É um parâmetro de função, precisa dereferenciar
+                struct_ptr = self.builder.load(struct_ptr)
+            elif (node.struct_name in self.type_map and 
+                  isinstance(self.type_map[node.struct_name], ReferenceType)):
+                # É uma referência, precisa dereferenciar
+                struct_ptr = self.builder.load(struct_ptr)
+            # NOVO: Se for um alloca (variável local), fazer load
+            import llvmlite.ir.instructions
+            if isinstance(struct_ptr, llvmlite.ir.instructions.AllocaInstr):
+                struct_ptr = self.builder.load(struct_ptr)
+        else:
+            # Procurar nas variáveis globais
+            struct_ptr = self.module.globals.get(node.struct_name)
+            if struct_ptr is None:
+                raise NameError(f"Struct '{node.struct_name}' não encontrado")
+        
+        # Determinar o tipo de struct baseado na variável
+        struct_type_name = None
+        if node.struct_name in self.type_map:
+            var_type = self.type_map[node.struct_name]
+            if isinstance(var_type, StructType):
+                struct_type_name = var_type.name
+            elif isinstance(var_type, ReferenceType) and isinstance(var_type.target_type, StructType):
+                struct_type_name = var_type.target_type.name
+        
+        if not struct_type_name or struct_type_name not in self.struct_fields:
+            raise NameError(f"Struct '{struct_type_name}' não encontrado")
+        
+        # Verificar se o campo existe
+        if node.field_name not in self.struct_fields[struct_type_name]:
+            raise NameError(f"Campo '{node.field_name}' não encontrado em struct '{struct_type_name}'")
+        
+        # Fazer cast do ponteiro para void para o tipo correto do struct
+        if struct_type_name in self.struct_types:
+            struct_type = self.struct_types[struct_type_name]
+            struct_ptr = self.builder.bitcast(struct_ptr, struct_type.as_pointer())
+        
+        # Obter o índice do campo
+        field_index = self.struct_fields[struct_type_name][node.field_name]
+        
+        # Obter o tipo do campo
+        field_type = None
+        if hasattr(self, 'struct_field_types') and struct_type_name in self.struct_field_types:
+            field_type = self.struct_field_types[struct_type_name][node.field_name]
+        
+        # Acessar o campo
+        field_ptr = self.builder.gep(struct_ptr, [
+            ir.Constant(ir.IntType(32), 0),
+            ir.Constant(ir.IntType(32), field_index)
+        ])
+        
+        # Gerar o valor a ser atribuído
+        if field_type:
+            llvm_field_type = self._convert_type(field_type)
+            value = self._generate_expression(node.value, llvm_field_type)
+        else:
+            value = self._generate_expression(node.value)
+        
+        # Tratar casos especiais
+        if isinstance(field_type, ReferenceType):
+            # Para campos de referência, garantir que o valor seja um ponteiro nulo se for null
+            if isinstance(value.type, ir.IntType) and value.type.width == 64:
+                # Se o valor é null (i64), converter para ponteiro nulo
+                value = ir.Constant(field_ptr.type.pointee, None)
+            elif isinstance(value.type, ir.PointerType) and isinstance(field_ptr.type.pointee, ir.PointerType):
+                # Se ambos são ponteiros, fazer cast se necessário
+                if value.type != field_ptr.type.pointee:
+                    value = self.builder.bitcast(value, field_ptr.type.pointee)
+        
+        # Armazenar o valor
+        self.builder.store(value, field_ptr)
+
+    def _generate_nested_struct_assignment(self, node: NestedStructAssignmentNode):
+        """Gerar código para atribuição aninhada de struct: struct.campo.subcampo = valor"""
+        # Procurar a variável struct primeiro localmente, depois globalmente
+        if node.struct_name in self.local_vars:
+            struct_ptr = self.local_vars[node.struct_name]
+            # Verificar se é um parâmetro de função (ponteiro para ponteiro)
+            if isinstance(struct_ptr, ir.Argument):
+                # É um parâmetro de função, precisa dereferenciar
+                struct_ptr = self.builder.load(struct_ptr)
+            elif (node.struct_name in self.type_map and 
+                  isinstance(self.type_map[node.struct_name], ReferenceType)):
+                # É uma referência, precisa dereferenciar
+                struct_ptr = self.builder.load(struct_ptr)
+        else:
+            # Procurar nas variáveis globais
+            struct_ptr = self.module.globals.get(node.struct_name)
+            if struct_ptr is None:
+                raise NameError(f"Struct '{node.struct_name}' não encontrado")
+        
+        # Determinar o tipo de struct baseado na variável
+        struct_type_name = None
+        if node.struct_name in self.type_map:
+            var_type = self.type_map[node.struct_name]
+            if isinstance(var_type, StructType):
+                struct_type_name = var_type.name
+            elif isinstance(var_type, ReferenceType) and isinstance(var_type.target_type, StructType):
+                struct_type_name = var_type.target_type.name
+        
+        if not struct_type_name or struct_type_name not in self.struct_fields:
+            raise NameError(f"Struct '{struct_type_name}' não encontrado")
+        
+        # Fazer cast do ponteiro para void para o tipo correto do struct
+        if struct_type_name in self.struct_types:
+            struct_type = self.struct_types[struct_type_name]
+            struct_ptr = self.builder.bitcast(struct_ptr, struct_type.as_pointer())
+        
+        # Navegar pelo caminho dos campos
+        current_ptr = struct_ptr
+        current_struct_type = struct_type_name
+        
+        for i, field_name in enumerate(node.field_path):
+            # Verificar se o campo existe no struct atual
+            if current_struct_type not in self.struct_fields or field_name not in self.struct_fields[current_struct_type]:
+                raise NameError(f"Campo '{field_name}' não encontrado em struct '{current_struct_type}'")
+            
+            # Obter o índice do campo
+            field_index = self.struct_fields[current_struct_type][field_name]
+            
+            # Acessar o campo
+            field_ptr = self.builder.gep(current_ptr, [
+                ir.Constant(ir.IntType(32), 0),
+                ir.Constant(ir.IntType(32), field_index)
+            ])
+            
+            # Se não é o último campo, continuar navegando
+            if i < len(node.field_path) - 1:
+                # Obter o tipo do campo para determinar o próximo struct
+                if hasattr(self, 'struct_field_types') and current_struct_type in self.struct_field_types:
+                    field_type = self.struct_field_types[current_struct_type][field_name]
+                    
+                    if isinstance(field_type, StructType):
+                        # O campo é um struct, navegar para ele
+                        if field_type.name in self.struct_types:
+                            field_struct_type = self.struct_types[field_type.name]
+                            # Carregar o valor do campo (que deve ser um ponteiro para struct)
+                            field_value = self.builder.load(field_ptr)
+                            
+                            # Verificar se é null
+                            null_ptr = ir.Constant(field_ptr.type.pointee, None)
+                            is_null = self.builder.icmp_signed('==', field_value, null_ptr)
+                            
+                            # Se é null, criar um novo struct
+                            with self.builder.if_then(is_null):
+                                # Calcular tamanho do struct (aproximação)
+                                struct_size = 24  # Tamanho padrão
+                                size_val = ir.Constant(ir.IntType(64), struct_size)
+                                new_struct_ptr = self.builder.call(self.malloc, [size_val])
+                                self._track_allocation(new_struct_ptr)
+                                
+                                # Fazer cast para o tipo correto
+                                new_struct_ptr = self.builder.bitcast(new_struct_ptr, field_struct_type.as_pointer())
+                                
+                                # Armazenar o novo struct no campo
+                                self.builder.store(new_struct_ptr, field_ptr)
+                                
+                                # Usar o novo struct para continuar navegando
+                                current_ptr = new_struct_ptr
+                            with self.builder.if_else():
+                                # Se não é null, fazer cast e continuar
+                                current_ptr = self.builder.bitcast(field_value, field_struct_type.as_pointer())
+                            
+                            current_struct_type = field_type.name
+                        else:
+                            raise NameError(f"Struct '{field_type.name}' não encontrado")
+                    elif isinstance(field_type, ReferenceType) and isinstance(field_type.target_type, StructType):
+                        # O campo é uma referência para struct
+                        if field_type.target_type.name in self.struct_types:
+                            field_struct_type = self.struct_types[field_type.target_type.name]
+                            # Carregar o valor do campo (que deve ser um ponteiro)
+                            field_value = self.builder.load(field_ptr)
+                            
+                            # Verificar se é null
+                            null_ptr = ir.Constant(field_ptr.type.pointee, None)
+                            is_null = self.builder.icmp_signed('==', field_value, null_ptr)
+                            
+                            # Se é null, criar um novo struct
+                            with self.builder.if_then(is_null):
+                                # Calcular tamanho do struct (aproximação)
+                                struct_size = 24  # Tamanho padrão
+                                size_val = ir.Constant(ir.IntType(64), struct_size)
+                                new_struct_ptr = self.builder.call(self.malloc, [size_val])
+                                self._track_allocation(new_struct_ptr)
+                                
+                                # Fazer cast para o tipo correto
+                                new_struct_ptr = self.builder.bitcast(new_struct_ptr, field_struct_type.as_pointer())
+                                
+                                # Armazenar o novo struct no campo
+                                self.builder.store(new_struct_ptr, field_ptr)
+                                
+                                # Usar o novo struct para continuar navegando
+                                current_ptr = new_struct_ptr
+                            with self.builder.if_else():
+                                # Se não é null, fazer cast e continuar
+                                current_ptr = self.builder.bitcast(field_value, field_struct_type.as_pointer())
+                            
+                            current_struct_type = field_type.target_type.name
+                        else:
+                            raise NameError(f"Struct '{field_type.target_type.name}' não encontrado")
+                    else:
+                        raise NameError(f"Campo '{field_name}' não é um struct")
+                else:
+                    # Fallback: assumir que o campo é um struct com o mesmo nome
+                    current_ptr = field_ptr
+                    current_struct_type = field_name
+            else:
+                # Último campo, atribuir o valor
+                # Obter o tipo do campo
+                field_type = None
+                if hasattr(self, 'struct_field_types') and current_struct_type in self.struct_field_types:
+                    field_type = self.struct_field_types[current_struct_type][field_name]
+                
+                # Gerar o valor a ser atribuído
+                if field_type:
+                    llvm_field_type = self._convert_type(field_type)
+                    value = self._generate_expression(node.value, llvm_field_type)
+                else:
+                    value = self._generate_expression(node.value)
+                
+                # Tratar casos especiais
+                if isinstance(field_type, ReferenceType):
+                    # Para campos de referência, garantir que o valor seja um ponteiro nulo se for null
+                    if isinstance(value.type, ir.IntType) and value.type.width == 64:
+                        # Se o valor é null (i64), converter para ponteiro nulo
+                        value = ir.Constant(field_ptr.type.pointee, None)
+                    elif isinstance(value.type, ir.PointerType) and isinstance(field_ptr.type.pointee, ir.PointerType):
+                        # Se ambos são ponteiros, fazer cast se necessário
+                        if value.type != field_ptr.type.pointee:
+                            value = self.builder.bitcast(value, field_ptr.type.pointee)
+                
+                # Armazenar o valor
+                self.builder.store(value, field_ptr)
 
     def _generate_struct_constructor(self, node: StructConstructorNode, expected_type: ir.Type = None) -> ir.Value:
         struct_name = node.struct_name
@@ -2900,10 +3291,25 @@ class LLVMCodeGenerator:
                     if isinstance(arg_value.type, ir.IntType) and arg_value.type.width == 64:
                         # Se o valor é null (i64), converter para ponteiro nulo
                         arg_value = ir.Constant(llvm_field_type, None)
-                    elif isinstance(arg_value.type, ir.PointerType) and isinstance(llvm_field_type, ir.PointerType):
-                        # Se ambos são ponteiros, fazer cast se necessário
-                        if arg_value.type != llvm_field_type:
-                            arg_value = self.builder.bitcast(arg_value, llvm_field_type)
+                elif isinstance(arg_value.type, ir.PointerType) and isinstance(llvm_field_type, ir.PointerType):
+                    # Se ambos são ponteiros, fazer cast se necessário
+                    if arg_value.type != llvm_field_type:
+                        arg_value = self.builder.bitcast(arg_value, llvm_field_type)
+                elif isinstance(arg_value.type, ir.LiteralStructType) and isinstance(llvm_field_type, ir.PointerType):
+                    # Se o valor é um struct e o campo espera um ponteiro, fazer cast
+                    arg_value = self.builder.bitcast(arg_value, llvm_field_type)
+                elif isinstance(arg_value.type, ir.PointerType) and isinstance(llvm_field_type, ir.LiteralStructType):
+                    # Se o valor é um ponteiro e o campo espera um struct, fazer cast
+                    arg_value = self.builder.bitcast(arg_value, llvm_field_type.as_pointer())
+                
+                # Verificar se os tipos são compatíveis antes de armazenar
+                if arg_value.type != field_ptr.type.pointee:
+                    try:
+                        arg_value = self.builder.bitcast(arg_value, field_ptr.type.pointee)
+                    except:
+                        # Se não conseguir fazer cast, usar valor nulo
+                        arg_value = ir.Constant(field_ptr.type.pointee, None)
+                
                 self.builder.store(arg_value, field_ptr)
         return struct_ptr
 
