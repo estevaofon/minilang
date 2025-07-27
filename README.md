@@ -117,6 +117,9 @@ let ativo: bool = true
 let numeros: int[5] = [1, 2, 3, 4, 5]
 let matriz: float[3] = [1.1, 2.2, 3.3]
 let vazio: int[0] = []
+
+// Get array size using length function
+let tamanho: int = length(numeros)  // Returns 5
 ```
 
 ### Structs
@@ -320,6 +323,7 @@ mini-language/
 - `to_str_float(float)` - Convert float to string
 - `to_int(float)` - Convert float to integer (truncates)
 - `to_float(int)` - Convert integer to float
+- `length(array)` - Get the size of an array (for arrays with defined size)
 
 ### Advanced Features
 

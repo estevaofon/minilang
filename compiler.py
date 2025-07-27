@@ -995,7 +995,7 @@ class Parser:
                             raise SyntaxError("Esperado ')' após argumentos")
                         
                         # Verificar se é uma função conhecida ou definida
-                        if expr.name in ['printf', 'malloc', 'free', 'strlen', 'strcpy', 'strcat', 'to_str', 'to_int', 'to_float', 'ord'] or expr.name in self.defined_functions:
+                        if expr.name in ['printf', 'malloc', 'free', 'strlen', 'strcpy', 'strcat', 'to_str', 'to_int', 'to_float', 'ord', 'length'] or expr.name in self.defined_functions:
                             expr = CallNode(expr.name, args)
                         elif expr.name in self.defined_structs:
                             # É um construtor de struct
@@ -2828,6 +2828,30 @@ class LLVMCodeGenerator:
                 func = self.to_int
             elif node.function_name == 'to_float':
                 func = self.to_float
+            elif node.function_name == 'length':
+                # Função length para obter tamanho de arrays
+                if not node.arguments:
+                    raise NameError("Função 'length' requer um argumento")
+                
+                arg = self._generate_expression(node.arguments[0])
+                
+                # Verificar se o argumento é um array
+                if isinstance(node.arguments[0], IdentifierNode):
+                    var_name = node.arguments[0].name
+                    if var_name in self.type_map and isinstance(self.type_map[var_name], ArrayType):
+                        # É um array, retornar o tamanho
+                        array_type = self.type_map[var_name]
+                        if array_type.size is not None:
+                            return ir.Constant(self.int_type, array_type.size)
+                        else:
+                            # Array sem tamanho definido, retornar 0
+                            return ir.Constant(self.int_type, 0)
+                    else:
+                        # Não é um array, retornar 0
+                        return ir.Constant(self.int_type, 0)
+                else:
+                    # Argumento não é um identificador, retornar 0
+                    return ir.Constant(self.int_type, 0)
             elif node.function_name in self.functions:
                 func = self.functions[node.function_name]
             else:
