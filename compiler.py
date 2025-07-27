@@ -34,6 +34,7 @@ class TokenType(Enum):
     RETURN = "RETURN"
     STRUCT = "STRUCT"
     REF = "REF"  # Nova palavra-chave para referências
+    BREAK = "BREAK"  # Nova palavra-chave para interromper loops
     
     # Tipos
     INT = "INT"
@@ -289,7 +290,8 @@ class Lexer:
             'null': TokenType.NULL,
             'struct': TokenType.STRUCT,
             'ref': TokenType.REF,
-            'zeros': TokenType.ZEROS
+            'zeros': TokenType.ZEROS,
+            'break': TokenType.BREAK
         }
         
         token_type = keywords.get(identifier, TokenType.IDENTIFIER)
@@ -495,6 +497,11 @@ class ReferenceNode(ASTNode):
     """Nó para referências: ref expressao"""
     expression: ASTNode
 
+@dataclass
+class BreakNode(ASTNode):
+    """Nó para a keyword break"""
+    pass
+
 # Parser
 class Parser:
     def __init__(self, tokens: List[Token]):
@@ -628,6 +635,8 @@ class Parser:
             return self._parse_return()
         elif self._match(TokenType.STRUCT):
             return self._parse_struct_definition()
+        elif self._match(TokenType.BREAK):
+            return self._parse_break()
         elif self._check(TokenType.IDENTIFIER):
             # Pode ser uma atribuição de array, reatribuição simples, acesso a struct ou chamada de função
             if self.position + 1 < len(self.tokens):
@@ -855,6 +864,10 @@ class Parser:
         if not self._check(TokenType.SEMICOLON) and not self._check(TokenType.END):
             value = self._parse_expression()
         return ReturnNode(value)
+    
+    def _parse_break(self) -> BreakNode:
+        """Parse a keyword break"""
+        return BreakNode()
     
     def _parse_expression(self) -> ASTNode:
         return self._parse_or()
@@ -1804,6 +1817,8 @@ class LLVMCodeGenerator:
             self._generate_while(node)
         elif isinstance(node, ReturnNode):
             self._generate_return(node)
+        elif isinstance(node, BreakNode):
+            self._generate_break(node)
         elif isinstance(node, StructDefinitionNode):
             # Structs são definições de tipo, não geram código executável
             pass
@@ -2351,6 +2366,10 @@ class LLVMCodeGenerator:
         body_block = self.current_function.append_basic_block(name="while_body")
         end_block = self.current_function.append_basic_block(name="while_end")
         
+        # Salvar break target anterior e definir novo
+        old_break_target = getattr(self, 'break_target', None)
+        self.break_target = end_block
+        
         # Ir para bloco de condição
         self.builder.branch(cond_block)
         
@@ -2366,6 +2385,9 @@ class LLVMCodeGenerator:
         if not self.builder.block.is_terminated:
             self.builder.branch(cond_block)
         
+        # Restaurar break target anterior
+        self.break_target = old_break_target
+        
         # Continuar após o loop
         self.builder.position_at_end(end_block)
     
@@ -2378,6 +2400,13 @@ class LLVMCodeGenerator:
                 self.builder.ret_void()
             else:
                 self.builder.ret(ir.Constant(self.int_type, 0))
+    
+    def _generate_break(self, node: BreakNode):
+        """Gerar código para a keyword break"""
+        if hasattr(self, 'break_target') and self.break_target:
+            self.builder.branch(self.break_target)
+        else:
+            raise SyntaxError("'break' usado fora de um loop")
     
     def _convert_array_args_for_function_call(self, func: ir.Function, args: List[ir.Value]) -> List[ir.Value]:
         """Converte arrays estáticos para ponteiros quando necessário para chamadas de função"""
