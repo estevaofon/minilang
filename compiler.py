@@ -2342,6 +2342,31 @@ class LLVMCodeGenerator:
             else:
                 self.builder.ret(ir.Constant(self.int_type, 0))
     
+    def _convert_array_args_for_function_call(self, func: ir.Function, args: List[ir.Value]) -> List[ir.Value]:
+        """Converte arrays estáticos para ponteiros quando necessário para chamadas de função"""
+        converted_args = []
+        for i, (arg, param_type) in enumerate(zip(args, func.args)):
+            # Se o argumento é um ponteiro para array estático e o parâmetro espera ponteiro para elemento
+            if (isinstance(arg.type, ir.PointerType) and
+                isinstance(arg.type.pointee, ir.ArrayType) and
+                isinstance(param_type.type, ir.PointerType) and
+                arg.type.pointee.element == param_type.type.pointee):
+                # GEP [0,0] para obter ponteiro para o primeiro elemento
+                zero = ir.Constant(ir.IntType(32), 0)
+                array_ptr = self.builder.gep(arg, [zero, zero], inbounds=True)
+                converted_args.append(array_ptr)
+            # Se o argumento é um array estático (valor), mas o parâmetro espera ponteiro
+            elif (isinstance(arg.type, ir.ArrayType) and 
+                  isinstance(param_type.type, ir.PointerType) and
+                  arg.type.element == param_type.type.pointee):
+                # Não é o ideal, mas mantém compatibilidade para casos antigos
+                element_ptr_type = ir.PointerType(arg.type.element)
+                array_ptr = self.builder.bitcast(arg, element_ptr_type)
+                converted_args.append(array_ptr)
+            else:
+                converted_args.append(arg)
+        return converted_args
+
     def _generate_expression(self, node: ASTNode, expected_type: ir.Type = None) -> ir.Value:
         if node is None:
             raise ValueError("Tentativa de gerar código para nó None")
@@ -2744,6 +2769,9 @@ class LLVMCodeGenerator:
                 # Se é um parâmetro de função que é array, retornar diretamente
                 if isinstance(var, ir.Argument) and isinstance(var.type, ir.PointerType):
                     return var
+                # Se é um array estático local, retornar o ponteiro (não fazer load)
+                if isinstance(var.type, ir.PointerType) and isinstance(var.type.pointee, ir.ArrayType):
+                    return var
                 # Se é um ponteiro (ref), retornar ponteiro diretamente
                 if isinstance(var.type, ir.PointerType) and var.type.pointee == ir.IntType(8):
                     return self.builder.load(var, name=node.name)
@@ -2827,6 +2855,8 @@ class LLVMCodeGenerator:
                     # Sem informação de tipo, gerar normalmente
                     args.append(self._generate_expression(arg_node, expected_type))
             
+            # Verificar se há arrays estáticos sendo passados para funções que esperam ponteiros
+            args = self._convert_array_args_for_function_call(func, args)
             return self.builder.call(func, args)
             
         elif isinstance(node, BinaryOpNode):
@@ -3136,7 +3166,7 @@ class LLVMCodeGenerator:
                             
                             # Verificar se é null
                             null_ptr = ir.Constant(field_ptr.type.pointee, None)
-                            is_null = self.builder.icmp_eq(field_value, null_ptr)
+                            is_null = self.builder.icmp_signed('==', field_value, null_ptr)
                             
                             # Se é null, criar um novo struct
                             with self.builder.if_then(is_null):
@@ -3170,7 +3200,7 @@ class LLVMCodeGenerator:
                             
                             # Verificar se é null
                             null_ptr = ir.Constant(field_ptr.type.pointee, None)
-                            is_null = self.builder.icmp_eq(field_value, null_ptr)
+                            is_null = self.builder.icmp_signed('==', field_value, null_ptr)
                             
                             # Se é null, criar um novo struct
                             with self.builder.if_then(is_null):
