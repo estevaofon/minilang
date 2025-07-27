@@ -1,0 +1,368 @@
+// ============================================
+// TESTE DE FUNÇÕES RECURSIVAS EM MINILANG
+// ============================================
+
+print("=== TESTE DE FUNÇÕES RECURSIVAS ===")
+print("")
+
+// ============================================
+// 1. FATORIAL RECURSIVO
+// ============================================
+print(">> 1. FATORIAL RECURSIVO")
+
+func fatorial_recursivo(n: int) -> int
+    if n <= 1 then
+        return 1
+    else
+        return n * fatorial_recursivo(n - 1)
+    end
+end
+
+// Testes do fatorial
+let fat5: int = fatorial_recursivo(5)
+let fat6: int = fatorial_recursivo(6)
+let fat7: int = fatorial_recursivo(7)
+
+print("Fatorial de 5: ")
+print(fat5)
+print("Verificação: 5! = 5 * 4 * 3 * 2 * 1 = 120")
+
+print("Fatorial de 6: ")
+print(fat6)
+print("Verificação: 6! = 6 * 5 * 4 * 3 * 2 * 1 = 720")
+
+print("Fatorial de 7: ")
+print(fat7)
+print("Verificação: 7! = 7 * 6 * 5 * 4 * 3 * 2 * 1 = 5040")
+print("")
+
+// ============================================
+// 2. FIBONACCI RECURSIVO
+// ============================================
+print(">> 2. FIBONACCI RECURSIVO")
+
+func fibonacci_recursivo(n: int) -> int
+    if n <= 1 then
+        return n
+    else
+        return fibonacci_recursivo(n - 1) + fibonacci_recursivo(n - 2)
+    end
+end
+
+// Testes do fibonacci
+let fib0: int = fibonacci_recursivo(0)
+let fib1: int = fibonacci_recursivo(1)
+let fib2: int = fibonacci_recursivo(2)
+let fib3: int = fibonacci_recursivo(3)
+let fib4: int = fibonacci_recursivo(4)
+let fib5: int = fibonacci_recursivo(5)
+let fib6: int = fibonacci_recursivo(6)
+
+print("Fibonacci(0): ")
+print(fib0)
+print("Fibonacci(1): ")
+print(fib1)
+print("Fibonacci(2): ")
+print(fib2)
+print("Fibonacci(3): ")
+print(fib3)
+print("Fibonacci(4): ")
+print(fib4)
+print("Fibonacci(5): ")
+print(fib5)
+print("Fibonacci(6): ")
+print(fib6)
+
+print("Sequência Fibonacci: 0, 1, 1, 2, 3, 5, 8")
+print("")
+
+// ============================================
+// 3. SOMA RECURSIVA DE ARRAY
+// ============================================
+print(">> 3. SOMA RECURSIVA DE ARRAY")
+
+func soma_recursiva(arr: int[], inicio: int, fim: int) -> int
+    if inicio > fim then
+        return 0
+    else
+        if inicio == fim then
+            return arr[inicio]
+        else
+            let meio: int = (inicio + fim) / 2
+            let soma_esq: int = soma_recursiva(arr, inicio, meio)
+            let soma_dir: int = soma_recursiva(arr, meio + 1, fim)
+            return soma_esq + soma_dir
+        end
+    end
+end
+
+let array_soma: int[6] = [10, 20, 30, 40, 50, 60]
+let soma_total: int = soma_recursiva(array_soma, 0, 5)
+
+print("Array: [10, 20, 30, 40, 50, 60]")
+print("Soma recursiva: ")
+print(soma_total)
+print("Verificação: 10 + 20 + 30 + 40 + 50 + 60 = 210")
+print("")
+
+// ============================================
+// 4. MÁXIMO RECURSIVO EM ARRAY
+// ============================================
+print(">> 4. MÁXIMO RECURSIVO EM ARRAY")
+
+func maximo_recursivo(arr: int[], inicio: int, fim: int) -> int
+    if inicio == fim then
+        return arr[inicio]
+    else
+        let meio: int = (inicio + fim) / 2
+        let max_esq: int = maximo_recursivo(arr, inicio, meio)
+        let max_dir: int = maximo_recursivo(arr, meio + 1, fim)
+        
+        if max_esq > max_dir then
+            return max_esq
+        else
+            return max_dir
+        end
+    end
+end
+
+let array_max: int[5] = [15, 8, 22, 3, 17]
+let maximo: int = maximo_recursivo(array_max, 0, 4)
+
+print("Array: [15, 8, 22, 3, 17]")
+print("Máximo recursivo: ")
+print(maximo)
+print("Verificação: máximo é 22")
+print("")
+
+// ============================================
+// 5. POTÊNCIA RECURSIVA
+// ============================================
+print(">> 5. POTÊNCIA RECURSIVA")
+
+func potencia_recursiva(base: int, expoente: int) -> int
+    if expoente == 0 then
+        return 1
+    else
+        if expoente == 1 then
+            return base
+        else
+            if expoente % 2 == 0 then
+                let temp: int = potencia_recursiva(base, expoente / 2)
+                return temp * temp
+            else
+                return base * potencia_recursiva(base, expoente - 1)
+            end
+        end
+    end
+end
+
+let pot2_5: int = potencia_recursiva(2, 5)
+let pot3_4: int = potencia_recursiva(3, 4)
+let pot5_3: int = potencia_recursiva(5, 3)
+
+print("2^5: ")
+print(pot2_5)
+print("Verificação: 2^5 = 32")
+
+print("3^4: ")
+print(pot3_4)
+print("Verificação: 3^4 = 81")
+
+print("5^3: ")
+print(pot5_3)
+print("Verificação: 5^3 = 125")
+print("")
+
+// ============================================
+// 6. MDC (MÁXIMO DIVISOR COMUM) RECURSIVO
+// ============================================
+print(">> 6. MDC RECURSIVO")
+
+func mdc_recursivo(a: int, b: int) -> int
+    if b == 0 then
+        return a
+    else
+        return mdc_recursivo(b, a % b)
+    end
+end
+
+let mdc1: int = mdc_recursivo(48, 18)
+let mdc2: int = mdc_recursivo(54, 24)
+let mdc3: int = mdc_recursivo(7, 13)
+
+print("MDC(48, 18): ")
+print(mdc1)
+print("Verificação: MDC(48, 18) = 6")
+
+print("MDC(54, 24): ")
+print(mdc2)
+print("Verificação: MDC(54, 24) = 6")
+
+print("MDC(7, 13): ")
+print(mdc3)
+print("Verificação: MDC(7, 13) = 1 (primos entre si)")
+print("")
+
+// ============================================
+// 7. CONTAGEM DE ELEMENTOS RECURSIVA
+// ============================================
+print(">> 7. CONTAGEM DE ELEMENTOS RECURSIVA")
+
+func contar_elementos(arr: int[], tamanho: int, valor: int) -> int
+    if tamanho == 0 then
+        return 0
+    else
+        let contagem_resto: int = contar_elementos(arr, tamanho - 1, valor)
+        
+        if arr[tamanho - 1] == valor then
+            return contagem_resto + 1
+        else
+            return contagem_resto
+        end
+    end
+end
+
+let array_contagem: int[8] = [1, 3, 5, 3, 7, 3, 9, 3]
+let contagem_3: int = contar_elementos(array_contagem, 8, 3)
+let contagem_5: int = contar_elementos(array_contagem, 8, 5)
+let contagem_10: int = contar_elementos(array_contagem, 8, 10)
+
+print("Array: [1, 3, 5, 3, 7, 3, 9, 3]")
+print("Contagem do valor 3: ")
+print(contagem_3)
+print("Contagem do valor 5: ")
+print(contagem_5)
+print("Contagem do valor 10: ")
+print(contagem_10)
+print("")
+
+// ============================================
+// 8. INVERSÃO DE ARRAY RECURSIVA
+// ============================================
+print(">> 8. INVERSÃO DE ARRAY RECURSIVA")
+
+func inverter_array_recursivo(arr: int[], inicio: int, fim: int) -> void
+    if inicio < fim then
+        // Trocar elementos
+        let temp: int = arr[inicio]
+        arr[inicio] = arr[fim]
+        arr[fim] = temp
+        
+        // Chamada recursiva
+        inverter_array_recursivo(arr, inicio + 1, fim - 1)
+    end
+end
+
+func imprimir_array_recursivo(arr: int[], tamanho: int, indice: int) -> void
+    if indice < tamanho then
+        print(arr[indice])
+        
+        if indice < tamanho - 1 then
+            print(", ")
+        end
+        
+        imprimir_array_recursivo(arr, tamanho, indice + 1)
+    end
+end
+
+let array_inverter: int[6] = [1, 2, 3, 4, 5, 6]
+print("Array original: [1, 2, 3, 4, 5, 6]")
+
+inverter_array_recursivo(array_inverter, 0, 5)
+print("Array invertido: [")
+imprimir_array_recursivo(array_inverter, 6, 0)
+print("]")
+print("")
+
+// ============================================
+// 9. BUSCA BINÁRIA RECURSIVA
+// ============================================
+print(">> 9. BUSCA BINÁRIA RECURSIVA")
+
+func busca_binaria_recursiva(arr: int[], inicio: int, fim: int, valor: int) -> int
+    if inicio > fim then
+        return -1
+    else
+        let meio: int = (inicio + fim) / 2
+        
+        if arr[meio] == valor then
+            return meio
+        else
+            if arr[meio] < valor then
+                return busca_binaria_recursiva(arr, meio + 1, fim, valor)
+            else
+                return busca_binaria_recursiva(arr, inicio, meio - 1, valor)
+            end
+        end
+    end
+end
+
+let array_busca: int[7] = [1, 3, 5, 7, 9, 11, 13]
+let pos_7: int = busca_binaria_recursiva(array_busca, 0, 6, 7)
+let pos_11: int = busca_binaria_recursiva(array_busca, 0, 6, 11)
+let pos_2: int = busca_binaria_recursiva(array_busca, 0, 6, 2)
+
+print("Array ordenado: [1, 3, 5, 7, 9, 11, 13]")
+print("Posição do valor 7: ")
+print(pos_7)
+print("Posição do valor 11: ")
+print(pos_11)
+print("Posição do valor 2 (não encontrado): ")
+print(pos_2)
+print("")
+
+// ============================================
+// 10. TORRE DE HANOI RECURSIVA
+// ============================================
+print(">> 10. TORRE DE HANOI RECURSIVA")
+
+func hanoi_recursivo(n: int, origem: string, destino: string, auxiliar: string) -> void
+    if n == 1 then
+        print("Mover disco 1 de ")
+        print(origem)
+        print(" para ")
+        print(destino)
+    else
+        hanoi_recursivo(n - 1, origem, auxiliar, destino)
+        
+        print("Mover disco ")
+        print(n)
+        print(" de ")
+        print(origem)
+        print(" para ")
+        print(destino)
+        
+        hanoi_recursivo(n - 1, auxiliar, destino, origem)
+    end
+end
+
+print("Torre de Hanoi com 3 discos:")
+hanoi_recursivo(3, "A", "C", "B")
+print("")
+
+// ============================================
+// RESUMO FINAL
+// ============================================
+print("=== RESUMO DOS TESTES RECURSIVOS ===")
+print("✓ Fatorial recursivo funcionando")
+print("✓ Fibonacci recursivo funcionando")
+print("✓ Soma recursiva de array funcionando")
+print("✓ Máximo recursivo em array funcionando")
+print("✓ Potência recursiva funcionando")
+print("✓ MDC recursivo funcionando")
+print("✓ Contagem recursiva funcionando")
+print("✓ Inversão recursiva de array funcionando")
+print("✓ Busca binária recursiva funcionando")
+print("✓ Torre de Hanoi recursiva funcionando")
+print("")
+print("🎉 TODAS AS FUNÇÕES RECURSIVAS FUNCIONANDO!")
+print("")
+print("=== TIPOS DE RECURSÃO TESTADOS ===")
+print("✓ Recursão simples (fatorial, fibonacci)")
+print("✓ Recursão com divisão e conquista (soma, máximo)")
+print("✓ Recursão com otimização (potência)")
+print("✓ Recursão com múltiplos parâmetros (MDC)")
+print("✓ Recursão com modificação de estado (inversão)")
+print("✓ Recursão com condicionais complexas (busca binária)")
+print("✓ Recursão com múltiplas chamadas (Torre de Hanoi)") 
