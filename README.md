@@ -202,7 +202,7 @@ end
 ```minilang
 let num: int = 42
 let str: string = to_str_int(num)  // Convert int to string
-let flt: float = to_float(num)     // Convert int to float
+let flt: float = to_str_float(num)     // Convert int to float
 ```
 
 ### String Operations
@@ -210,7 +210,7 @@ let flt: float = to_float(num)     // Convert int to float
 ```minilang
 let str1: string = "Hello"
 let str2: string = "World"
-let result: string = str1 ++ " " ++ str2  // String concatenation
+let result: string = str1 + " " + str2  // String concatenation
 ```
 
 ## Examples
