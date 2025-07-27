@@ -1915,10 +1915,20 @@ class LLVMCodeGenerator:
                 zero = ir.Constant(ir.IntType(32), 0)
                 array_ptr = self.builder.gep(var, [zero, zero], inbounds=True)
             else:
-                array_ptr = self.builder.load(var)
-                if isinstance(array_ptr.type, ir.ArrayType):
-                    zero = ir.Constant(ir.IntType(32), 0)
-                    array_ptr = self.builder.gep(array_ptr, [zero, zero], inbounds=True)
+                # Verificar se é uma referência (precisa fazer load primeiro)
+                if (node.array_name in self.type_map and 
+                    isinstance(self.type_map[node.array_name], ReferenceType)):
+                    # É uma referência, fazer load para obter o ponteiro real
+                    array_ptr = self.builder.load(var)
+                    # Se o resultado é um ponteiro para array, obter ponteiro para primeiro elemento
+                    if isinstance(array_ptr.type, ir.PointerType) and isinstance(array_ptr.type.pointee, ir.ArrayType):
+                        zero = ir.Constant(ir.IntType(32), 0)
+                        array_ptr = self.builder.gep(array_ptr, [zero, zero], inbounds=True)
+                else:
+                    array_ptr = self.builder.load(var)
+                    if isinstance(array_ptr.type, ir.ArrayType):
+                        zero = ir.Constant(ir.IntType(32), 0)
+                        array_ptr = self.builder.gep(array_ptr, [zero, zero], inbounds=True)
         
         # Verificar se array_ptr é um ponteiro válido
         if not isinstance(array_ptr.type, ir.PointerType):
@@ -2734,10 +2744,20 @@ class LLVMCodeGenerator:
                     zero = ir.Constant(ir.IntType(32), 0)
                     array_ptr = self.builder.gep(var, [zero, zero], inbounds=True)
                 else:
-                    array_ptr = self.builder.load(var)
-                    if isinstance(array_ptr.type, ir.ArrayType):
-                        zero = ir.Constant(ir.IntType(32), 0)
-                        array_ptr = self.builder.gep(array_ptr, [zero, zero], inbounds=True)
+                    # Verificar se é uma referência
+                    if (node.array_name in self.type_map and 
+                        isinstance(self.type_map[node.array_name], ReferenceType)):
+                        # É uma referência, fazer load para obter o ponteiro real
+                        array_ptr = self.builder.load(var)
+                        # Se o resultado é um ponteiro para array, obter ponteiro para primeiro elemento
+                        if isinstance(array_ptr.type, ir.PointerType) and isinstance(array_ptr.type.pointee, ir.ArrayType):
+                            zero = ir.Constant(ir.IntType(32), 0)
+                            array_ptr = self.builder.gep(array_ptr, [zero, zero], inbounds=True)
+                    else:
+                        array_ptr = self.builder.load(var)
+                        if isinstance(array_ptr.type, ir.ArrayType):
+                            zero = ir.Constant(ir.IntType(32), 0)
+                            array_ptr = self.builder.gep(array_ptr, [zero, zero], inbounds=True)
             # Se for string (i8*), acessar como caractere (cast de segurança)
             if (isinstance(array_ptr.type, ir.PointerType) and array_ptr.type.pointee == self.char_type) or (
                 hasattr(node, 'element_type') and isinstance(node.element_type, StringType)):
@@ -2838,13 +2858,26 @@ class LLVMCodeGenerator:
                 # Verificar se o argumento é um array
                 if isinstance(node.arguments[0], IdentifierNode):
                     var_name = node.arguments[0].name
-                    if var_name in self.type_map and isinstance(self.type_map[var_name], ArrayType):
-                        # É um array, retornar o tamanho
-                        array_type = self.type_map[var_name]
-                        if array_type.size is not None:
-                            return ir.Constant(self.int_type, array_type.size)
+                    if var_name in self.type_map:
+                        var_type = self.type_map[var_name]
+                        if isinstance(var_type, ArrayType):
+                            # É um array, retornar o tamanho
+                            array_type = var_type
+                            if array_type.size is not None:
+                                return ir.Constant(self.int_type, array_type.size)
+                            else:
+                                # Array sem tamanho definido, retornar 0
+                                return ir.Constant(self.int_type, 0)
+                        elif isinstance(var_type, ReferenceType) and isinstance(var_type.target_type, ArrayType):
+                            # É uma referência para array, retornar o tamanho do array alvo
+                            array_type = var_type.target_type
+                            if array_type.size is not None:
+                                return ir.Constant(self.int_type, array_type.size)
+                            else:
+                                # Array sem tamanho definido, retornar 0
+                                return ir.Constant(self.int_type, 0)
                         else:
-                            # Array sem tamanho definido, retornar 0
+                            # Não é um array, retornar 0
                             return ir.Constant(self.int_type, 0)
                     else:
                         # Não é um array, retornar 0

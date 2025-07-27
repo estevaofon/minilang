@@ -567,6 +567,7 @@ print(">> 18. TESTES DE COMPLEXIDADE")
 
 // Teste com array simples (arrays aninhados não são suportados ainda)
 let array_simples: int[9] = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+assert(length(array_simples) == 9, "Tamanho do array simples deve ser 9")
 
 // Teste com múltiplas operações
 let resultado_complexo: int = (10 + 5) * 2 - 3
