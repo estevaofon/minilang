@@ -1380,9 +1380,22 @@ class LLVMCodeGenerator:
         if sys.platform == "win32":
             self._setup_windows_utf8()
         
-        # Gerar código para cada statement (exceto funções e globais)
+        # Primeiro, processar todas as variáveis locais para garantir que estejam disponíveis
         for stmt in ast.statements:
-            if not isinstance(stmt, FunctionNode) and not (isinstance(stmt, AssignmentNode) and stmt.is_global):
+            if isinstance(stmt, AssignmentNode) and not stmt.is_global:
+                self._generate_statement(stmt)
+        
+        # Depois, inicializar variáveis globais com chamadas de função
+        if hasattr(self, 'global_init_calls'):
+            for init_node in self.global_init_calls:
+                # Gerar o valor da chamada de função
+                value = self._generate_expression(init_node.value)
+                # Armazenar na variável global
+                self.builder.store(value, self.global_vars[init_node.identifier])
+        
+        # Por fim, processar o resto dos statements (prints, etc.)
+        for stmt in ast.statements:
+            if not isinstance(stmt, FunctionNode) and not isinstance(stmt, AssignmentNode):
                 self._generate_statement(stmt)
         
         # Adicionar limpeza de memória antes do return
@@ -1501,12 +1514,19 @@ class LLVMCodeGenerator:
                 return left or right
             else:
                 raise Exception(f"Operador não suportado em constante global: {node.operator}")
+        elif isinstance(node, CallNode):
+            # Para chamadas de função, retornar None para indicar que precisa ser avaliada em runtime
+            return None
         else:
             raise Exception(f"Valor inicial de global não suportado: {node}")
 
     def _declare_global_variable(self, node: AssignmentNode):
         """Declara uma variável global"""
         var_type = self._convert_type(node.var_type)
+        
+        # Verificar se o valor é uma chamada de função
+        is_function_call = isinstance(node.value, CallNode)
+        
         # Criar variável global
         if isinstance(node.var_type, ArrayType):
             # Para arrays, precisamos inicializar com o tamanho correto
@@ -1516,7 +1536,7 @@ class LLVMCodeGenerator:
                 if isinstance(node.var_type.element_type, StringType) or isinstance(node.var_type.element_type, StrType):
                     array_type = ir.ArrayType(self.char_type.as_pointer(), node.var_type.size)
                     gv = ir.GlobalVariable(self.module, array_type, name=node.identifier)
-                    if node.value:
+                    if node.value and not is_function_call:
                         init = self._eval_constant(node.value)
                         llvm_ptrs = []
                         for idx, v in enumerate(init):
@@ -1550,7 +1570,7 @@ class LLVMCodeGenerator:
                 elif isinstance(node.var_type.element_type, FloatType):
                     array_type = ir.ArrayType(elem_type, node.var_type.size)
                     gv = ir.GlobalVariable(self.module, array_type, name=node.identifier)
-                    if node.value:
+                    if node.value and not is_function_call:
                         init = self._eval_constant(node.value)
                         gv.initializer = ir.Constant(array_type, init)
                     else:
@@ -1558,7 +1578,7 @@ class LLVMCodeGenerator:
                 else:
                     array_type = ir.ArrayType(elem_type, node.var_type.size)
                     gv = ir.GlobalVariable(self.module, array_type, name=node.identifier)
-                    if node.value:
+                    if node.value and not is_function_call:
                         init = self._eval_constant(node.value)
                         gv.initializer = ir.Constant(array_type, init)
                     else:
@@ -1570,22 +1590,29 @@ class LLVMCodeGenerator:
         else:
             gv = ir.GlobalVariable(self.module, var_type, name=node.identifier)
             if isinstance(node.var_type, IntType):
-                if node.value:
+                if node.value and not is_function_call:
                     init = self._eval_constant(node.value)
                     gv.initializer = ir.Constant(var_type, init)
                 else:
                     gv.initializer = ir.Constant(var_type, 0)
             elif isinstance(node.var_type, FloatType):
-                if node.value:
+                if node.value and not is_function_call:
                     init = self._eval_constant(node.value)
                     gv.initializer = ir.Constant(var_type, init)
                 else:
                     gv.initializer = ir.Constant(var_type, 0.0)
             else:
                 gv.initializer = ir.Constant(var_type, None)
+        
         gv.linkage = 'internal'
         self.global_vars[node.identifier] = gv
         self.type_map[node.identifier] = node.var_type
+        
+        # Se é uma chamada de função, armazenar para inicialização posterior
+        if is_function_call:
+            if not hasattr(self, 'global_init_calls'):
+                self.global_init_calls = []
+            self.global_init_calls.append(node)
     
     def _declare_function(self, node: FunctionNode):
         # Converter tipos dos parâmetros com tratamento especial para referências
