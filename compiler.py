@@ -1008,7 +1008,7 @@ class Parser:
                             raise SyntaxError("Esperado ')' após argumentos")
                         
                         # Verificar se é uma função conhecida ou definida
-                        if expr.name in ['printf', 'malloc', 'free', 'strlen', 'strcpy', 'strcat', 'to_str', 'to_int', 'to_float', 'ord', 'length'] or expr.name in self.defined_functions:
+                        if expr.name in ['printf', 'malloc', 'free', 'strlen', 'strcpy', 'strcat', 'to_str', 'array_to_str', 'to_int', 'to_float', 'ord', 'length'] or expr.name in self.defined_functions:
                             expr = CallNode(expr.name, args)
                         elif expr.name in self.defined_structs:
                             # É um construtor de struct
@@ -1266,6 +1266,12 @@ class LLVMCodeGenerator:
         to_str_float_ty = ir.FunctionType(self.string_type, [self.float_type])
         self.to_str_float = ir.Function(self.module, to_str_float_ty, name="to_str_float")
         
+        # array_to_str: converte arrays para string
+        array_to_str_int_ty = ir.FunctionType(self.string_type, [self.int_type.as_pointer(), self.int_type])
+        self.array_to_str_int = ir.Function(self.module, array_to_str_int_ty, name="array_to_str_int")
+        array_to_str_float_ty = ir.FunctionType(self.string_type, [self.float_type.as_pointer(), self.int_type])
+        self.array_to_str_float = ir.Function(self.module, array_to_str_float_ty, name="array_to_str_float")
+        
         # to_int: converte float para int
         to_int_ty = ir.FunctionType(self.int_type, [self.float_type])
         self.to_int = ir.Function(self.module, to_int_ty, name="to_int")
@@ -1276,7 +1282,7 @@ class LLVMCodeGenerator:
         
         if sys.platform == "win32":
             # Adicionar atributos para linking correto no Windows
-            for func in [self.printf, self.malloc, self.free, self.strlen, self.strcpy, self.strcat, self.sprintf, self.to_str_int, self.to_str_float, self.to_int, self.to_float]:
+            for func in [self.printf, self.malloc, self.free, self.strlen, self.strcpy, self.strcat, self.sprintf, self.to_str_int, self.to_str_float, self.array_to_str_int, self.array_to_str_float, self.to_int, self.to_float]:
                 if func:
                     func.calling_convention = 'ccc'
                     func.linkage = 'external'
@@ -1292,13 +1298,13 @@ class LLVMCodeGenerator:
                 self.setconsolecp.linkage = 'external'
         else:
             # Adicionar atributos para outras plataformas
-            for func in [self.printf, self.malloc, self.free, self.strlen, self.strcpy, self.strcat, self.sprintf, self.to_str_int, self.to_str_float, self.to_int, self.to_float]:
+            for func in [self.printf, self.malloc, self.free, self.strlen, self.strcpy, self.strcat, self.sprintf, self.to_str_int, self.to_str_float, self.array_to_str_int, self.array_to_str_float, self.to_int, self.to_float]:
                 func.calling_convention = 'ccc'
                 func.linkage = 'external'
         
         if sys.platform == "win32":
             # Adicionar atributos para linking correto no Windows
-            for func in [self.printf, self.malloc, self.free, self.strlen, self.strcpy, self.to_str_int, self.to_str_float, self.to_int, self.to_float]:
+            for func in [self.printf, self.malloc, self.free, self.strlen, self.strcpy, self.to_str_int, self.to_str_float, self.array_to_str_int, self.array_to_str_float, self.to_int, self.to_float]:
                 if func:
                     func.calling_convention = 'ccc'
                     func.linkage = 'external'
@@ -2885,11 +2891,64 @@ class LLVMCodeGenerator:
             if node.function_name == 'to_str':
                 # Determinar qual versão de to_str usar baseado no tipo do argumento
                 if node.arguments:
-                    arg = self._generate_expression(node.arguments[0])
-                    if isinstance(arg.type, ir.DoubleType):
-                        func = self.to_str_float
+                    arg_node = node.arguments[0]
+                    
+                    # Verificar se o argumento é um array
+                    if isinstance(arg_node, IdentifierNode):
+                        var_name = arg_node.name
+                        if var_name in self.type_map:
+                            var_type = self.type_map[var_name]
+                            if isinstance(var_type, ArrayType):
+                                # É um array, usar array_to_str
+                                array_ptr = self._generate_expression(arg_node)
+                                array_size = ir.Constant(self.int_type, var_type.size if var_type.size else 0)
+                                
+                                # Fazer cast do ponteiro para array para ponteiro para elemento
+                                if isinstance(var_type.element_type, IntType):
+                                    element_ptr = self.builder.bitcast(array_ptr, self.int_type.as_pointer())
+                                    return self.builder.call(self.array_to_str_int, [element_ptr, array_size])
+                                elif isinstance(var_type.element_type, FloatType):
+                                    element_ptr = self.builder.bitcast(array_ptr, self.float_type.as_pointer())
+                                    return self.builder.call(self.array_to_str_float, [element_ptr, array_size])
+                                else:
+                                    # Para outros tipos, usar to_str_int como fallback
+                                    func = self.to_str_int
+                            elif isinstance(var_type, ReferenceType) and isinstance(var_type.target_type, ArrayType):
+                                # É uma referência para array
+                                array_ptr = self._generate_expression(arg_node)
+                                array_size = ir.Constant(self.int_type, var_type.target_type.size if var_type.target_type.size else 0)
+                                
+                                # Fazer cast do ponteiro para array para ponteiro para elemento
+                                if isinstance(var_type.target_type.element_type, IntType):
+                                    element_ptr = self.builder.bitcast(array_ptr, self.int_type.as_pointer())
+                                    return self.builder.call(self.array_to_str_int, [element_ptr, array_size])
+                                elif isinstance(var_type.target_type.element_type, FloatType):
+                                    element_ptr = self.builder.bitcast(array_ptr, self.float_type.as_pointer())
+                                    return self.builder.call(self.array_to_str_float, [element_ptr, array_size])
+                                else:
+                                    # Para outros tipos, usar to_str_int como fallback
+                                    func = self.to_str_int
+                            else:
+                                # Não é um array, usar to_str normal
+                                arg = self._generate_expression(arg_node)
+                                if isinstance(arg.type, ir.DoubleType):
+                                    func = self.to_str_float
+                                else:
+                                    func = self.to_str_int
+                        else:
+                            # Variável não encontrada, usar to_str normal
+                            arg = self._generate_expression(arg_node)
+                            if isinstance(arg.type, ir.DoubleType):
+                                func = self.to_str_float
+                            else:
+                                func = self.to_str_int
                     else:
-                        func = self.to_str_int
+                        # Argumento não é um identificador, usar to_str normal
+                        arg = self._generate_expression(arg_node)
+                        if isinstance(arg.type, ir.DoubleType):
+                            func = self.to_str_float
+                        else:
+                            func = self.to_str_int
                 else:
                     func = self.to_str_int  # default
                 
@@ -2900,6 +2959,39 @@ class LLVMCodeGenerator:
                     args.append(arg_value)
                 
                 return self.builder.call(func, args)
+            elif node.function_name == 'array_to_str':
+                # Função array_to_str para converter arrays para string
+                if not node.arguments or len(node.arguments) < 2:
+                    raise NameError("Função 'array_to_str' requer dois argumentos: array e tamanho")
+                
+                array_arg = self._generate_expression(node.arguments[0])
+                size_arg = self._generate_expression(node.arguments[1])
+                
+                # Determinar o tipo do array baseado no primeiro argumento
+                if isinstance(node.arguments[0], IdentifierNode):
+                    var_name = node.arguments[0].name
+                    if var_name in self.type_map:
+                        var_type = self.type_map[var_name]
+                        if isinstance(var_type, ArrayType):
+                            # Fazer cast do ponteiro para array para ponteiro para elemento
+                            if isinstance(var_type.element_type, IntType):
+                                element_ptr = self.builder.bitcast(array_arg, self.int_type.as_pointer())
+                                return self.builder.call(self.array_to_str_int, [element_ptr, size_arg])
+                            elif isinstance(var_type.element_type, FloatType):
+                                element_ptr = self.builder.bitcast(array_arg, self.float_type.as_pointer())
+                                return self.builder.call(self.array_to_str_float, [element_ptr, size_arg])
+                        elif isinstance(var_type, ReferenceType) and isinstance(var_type.target_type, ArrayType):
+                            # Fazer cast do ponteiro para array para ponteiro para elemento
+                            if isinstance(var_type.target_type.element_type, IntType):
+                                element_ptr = self.builder.bitcast(array_arg, self.int_type.as_pointer())
+                                return self.builder.call(self.array_to_str_int, [element_ptr, size_arg])
+                            elif isinstance(var_type.target_type.element_type, FloatType):
+                                element_ptr = self.builder.bitcast(array_arg, self.float_type.as_pointer())
+                                return self.builder.call(self.array_to_str_float, [element_ptr, size_arg])
+                
+                # Fallback: assumir que é um array de int
+                element_ptr = self.builder.bitcast(array_arg, self.int_type.as_pointer())
+                return self.builder.call(self.array_to_str_int, [element_ptr, size_arg])
             elif node.function_name == 'to_int':
                 func = self.to_int
             elif node.function_name == 'to_float':
