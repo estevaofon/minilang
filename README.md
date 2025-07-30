@@ -148,8 +148,10 @@ minilang[1]> func fatorial(n: int) -> int
 minilang[2]> print(fatorial(5))
 120
 minilang[3]> let array = [1, 2, 3, 4, 5]
-minilang[4]> for i in 0..5 do
+minilang[4]> let i = 0
+minilang[5]> while i < 5 do
   > print(array[i])
+  > i = i + 1
   > end
 1
 2
