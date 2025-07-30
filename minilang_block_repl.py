@@ -129,8 +129,8 @@ class MiniLangBlockREPL:
             return 'if_start'
         elif line.startswith('while ') and ' do' in line:
             return 'while_start'
-        elif line.startswith('for ') and ' do' in line:
-            return 'for_start'
+        elif line.startswith('struct '):
+            return 'struct_start'
         elif line == 'else':
             return 'else_start'
         elif line == 'end':
@@ -151,7 +151,7 @@ class MiniLangBlockREPL:
             opens += 1
         if line.startswith('while ') and ' do' in line:
             opens += 1
-        if line.startswith('for ') and ' do' in line:
+        if line.startswith('struct '):
             opens += 1
         if line == 'else':
             opens += 1
@@ -165,7 +165,7 @@ class MiniLangBlockREPL:
     def is_block_start(self, line):
         """Verifica se a linha inicia um bloco"""
         analysis = self.analyze_line(line)
-        return analysis in ['func_start', 'if_start', 'while_start', 'for_start', 'else_start']
+        return analysis in ['func_start', 'if_start', 'while_start', 'struct_start', 'else_start']
     
     def add_line(self, line):
         """Adiciona uma linha ao buffer de código"""
@@ -205,13 +205,8 @@ def handle_special_command(command, repl):
         print("  .undo     - Remove a última linha")
         print("  .block    - Entra no modo bloco")
         print("")
-        print("📝 BLOCOS DE CÓDIGO MINILANG:")
-        print("  - func nome() -> tipo ... end")
-        print("  - if condição then ... end")
-        print("  - while condição do ... end")
-        print("  - for i in 0..10 do ... end")
-        print("  - else ... end")
-        print("  - Digite duas linhas vazias consecutivas para finalizar bloco manual")
+        print("📝 BLOCOS: func/if/while/struct ... end")
+        print("  - Duas linhas vazias para finalizar bloco manual")
         return 0
     
     elif cmd in ['.quit', '.exit']:
@@ -296,24 +291,14 @@ def handle_special_command(command, repl):
 
 def main():
     """Inicia o REPL com suporte a blocos MiniLang"""
-    print("=" * 60)
-    print("MiniLang JIT Interpreter - MiniLang Block REPL Mode")
-    print("=" * 60)
-    print("Digite código MiniLang linha por linha.")
-    print("O estado é mantido entre as linhas.")
-    print("Apenas a nova saída é mostrada (sem repetir prints).")
-    print("")
-    print("📝 BLOCOS DE CÓDIGO MINILANG:")
-    print("  - func nome() -> tipo ... end")
-    print("  - if condição then ... end")
-    print("  - while condição do ... end")
-    print("  - for i in 0..10 do ... end")
-    print("  - else ... end")
-    print("  - Digite duas linhas vazias consecutivas para finalizar bloco manual")
-    print("")
-    print("Comandos especiais começam com '.' (ex: .help)")
-    print("Pressione Ctrl+C ou digite .quit para sair")
-    print("=" * 60)
+    print("=" * 50)
+    print("MiniLang JIT Interpreter - REPL")
+    print("=" * 50)
+    print("Digite código linha por linha. Estado mantido entre linhas.")
+    print("📝 BLOCOS: func/if/while/struct ... end")
+    print("  - Duas linhas vazias para finalizar bloco manual")
+    print("Comandos: .help .quit .clear .reset")
+    print("=" * 50)
     
     repl = MiniLangBlockREPL()
     
@@ -384,7 +369,7 @@ def main():
                         repl.empty_line_count = 0
                         opens, closes = repl.count_block_changes(line)
                         repl.indent_level += opens - closes
-                        print("  > (Modo bloco ativado. Digite 'end' ou duas linhas vazias para finalizar)")
+
                         continue
                     else:
                         # Linha única

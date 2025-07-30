@@ -2091,6 +2091,10 @@ class LLVMCodeGenerator:
         # Obter ponteiro do struct
         if struct_name in self.local_vars:
             struct_ptr = self.local_vars[struct_name]
+            # SEMPRE fazer load se for variável local (alloca)
+            import llvmlite.ir.instructions
+            if isinstance(struct_ptr, llvmlite.ir.instructions.AllocaInstr):
+                struct_ptr = self.builder.load(struct_ptr)
         elif struct_name in self.global_vars:
             struct_ptr = self.global_vars[struct_name]
         else:
