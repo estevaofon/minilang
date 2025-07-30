@@ -100,6 +100,72 @@ gcc -o testes.exe output.obj casting_functions.c
 ./testes.exe
 ```
 
+## 🚀 JIT Interpreter & REPL
+
+### **Just-In-Time (JIT) Interpreter**
+
+MiniLang v2.0 includes a powerful JIT interpreter that compiles and executes code at runtime:
+
+```bash
+# Execute a MiniLang file directly
+uv run .\interpreter_jit.py .\minilang_examples\bubblesort.ml
+
+# Execute with debug mode
+uv run .\interpreter_jit.py .\minilang_examples\bubblesort.ml --debug
+```
+
+**Features:**
+- ⚡ **Fast Execution**: Compiles to native code using LLVM JIT
+- 🔧 **Runtime Compilation**: No separate compilation step needed
+- 🎯 **Direct Execution**: Run `.ml` files immediately
+- 🐛 **Debug Support**: Detailed execution information
+
+### **Interactive REPL (Read-Eval-Print Loop)**
+
+Experience MiniLang interactively with the official REPL:
+
+```bash
+# Start the interactive REPL
+uv run .\minilang_block_repl.py
+```
+
+**REPL Features:**
+- 🧱 **Block Support**: Write functions, loops, and conditionals interactively
+- 📝 **Syntax Aware**: Understands MiniLang syntax (`func/end`, `if/then/end`, `while/do/end`)
+- 🔄 **State Persistence**: Variables and functions persist between lines
+- 🎨 **Clean Output**: Filters repeated prints for a clean interface
+- ⚡ **Smart Execution**: Detects block boundaries automatically
+
+**Example REPL Session:**
+```bash
+minilang[1]> func fatorial(n: int) -> int
+  > if n <= 1 then
+  >   return 1
+  > else
+  >   return n * fatorial(n - 1)
+  > end
+  > end
+minilang[2]> print(fatorial(5))
+120
+minilang[3]> let array = [1, 2, 3, 4, 5]
+minilang[4]> for i in 0..5 do
+  > print(array[i])
+  > end
+1
+2
+3
+4
+5
+```
+
+**REPL Commands:**
+- `.help` - Show available commands
+- `.show` - Display accumulated code
+- `.reset` - Clear the code buffer
+- `.quit` - Exit the REPL
+
+For detailed REPL documentation, see [REPL_README.md](REPL_README.md).
+
 ## Language Syntax
 
 ### Variable Declarations
@@ -277,10 +343,13 @@ gcc -o hello.exe output.obj casting_functions.c
 ```
 mini-language/
 ├── compiler.py                          # Main compiler implementation
+├── interpreter_jit.py                   # JIT interpreter for runtime execution
+├── minilang_block_repl.py              # Interactive REPL
 ├── casting_functions.c                  # C functions for type casting
 ├── pyproject.toml                      # Project configuration
 ├── uv.lock                            # Dependency lock file
 ├── README.md                          # This file
+├── REPL_README.md                     # REPL documentation
 ├── RESUMO_IMPLEMENTACAO.md            # Implementation summary
 ├── AUTO_REFERENCIAMENTO_STRUCTS.md    # Auto-reference documentation
 ├── EXEMPLOS_AUTO_REFERENCIA.md        # Auto-reference examples
@@ -409,4 +478,4 @@ This project is for educational purposes.
 
 ---
 
-**MiniLang v2.0** - A powerful, statically-typed programming language with advanced data structures, algorithms, and LLVM backend compilation. Perfect for learning compiler design concepts and implementing complex programming language features.
+**MiniLang v2.0** - A powerful, statically-typed programming language with advanced data structures, algorithms, LLVM backend compilation, JIT interpreter, and interactive REPL. Perfect for learning compiler design concepts and implementing complex programming language features.
