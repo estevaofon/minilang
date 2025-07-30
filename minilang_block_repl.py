@@ -1,12 +1,23 @@
 #!/usr/bin/env python3
 """
 MiniLang Block REPL - Versão que entende a sintaxe correta da MiniLang
+Com Syntax Highlighting em Tempo Real
 """
 
 import sys
 import os
 import subprocess
 import tempfile
+import re
+from colorama import init, Fore, Back, Style
+from prompt_toolkit import PromptSession
+from prompt_toolkit.lexers import PygmentsLexer
+from prompt_toolkit.styles import Style as PromptStyle
+from prompt_toolkit.completion import WordCompleter
+from pygments.lexers import PythonLexer
+
+# Inicializar colorama para suporte cross-platform
+init(autoreset=True)
 
 class MiniLangBlockREPL:
     def __init__(self):
@@ -18,6 +29,73 @@ class MiniLangBlockREPL:
         self.block_stack = []  # Pilha para controlar blocos aninhados
         self.indent_level = 0
         self.empty_line_count = 0  # Contador de linhas vazias consecutivas
+        self.syntax_highlighting = True  # Flag para ativar/desativar highlighting
+        
+        # Configurar prompt_toolkit com PygmentsLexer
+        self.lexer = PygmentsLexer(PythonLexer)
+        
+        # Completador
+        commands = ['.help', '.quit', '.exit', '.clear', '.version', 
+                   '.test', '.reset', '.show', '.run', '.undo', '.block', '.syntax']
+        keywords = ['func', 'if', 'then', 'else', 'while', 'do', 'end', 'return',
+                   'let', 'global', 'print', 'struct', 'length', 'to_str']
+        types = ['int', 'float', 'string', 'void', 'bool']
+        
+        self.completer = WordCompleter(commands + keywords + types, ignore_case=True)
+        
+        # Estilo para as cores
+        self.style = PromptStyle.from_dict({
+            'pygments.keyword': 'ansicyan bold',
+            'pygments.string': 'ansimagenta',
+            'pygments.string.single': 'ansimagenta',
+            'pygments.string.double': 'ansimagenta',
+            'pygments.number': 'ansiyellow',
+            'pygments.comment': 'ansiblue',
+            'pygments.function': 'ansimagenta',
+            'pygments.operator': 'ansired',
+            'pygments.name': 'ansiwhite',
+            'pygments.literal': 'ansiyellow',
+            'pygments.punctuation': 'ansiwhite',
+            'pygments.literal.string': 'ansimagenta',
+            'pygments.literal.string.single': 'ansimagenta',
+            'pygments.literal.string.double': 'ansimagenta',
+        })
+        
+        # Sessão do prompt
+        self.session = PromptSession(
+            lexer=self.lexer if self.syntax_highlighting else None,
+            completer=self.completer,
+            style=self.style,
+            enable_history_search=True,
+            complete_while_typing=True,
+            mouse_support=True,
+        )
+    
+    def toggle_syntax_highlighting(self):
+        """Ativa/desativa syntax highlighting"""
+        self.syntax_highlighting = not self.syntax_highlighting
+        
+        # Recriar sessão com novo lexer
+        self.session = PromptSession(
+            lexer=self.lexer if self.syntax_highlighting else None,
+            completer=self.completer,
+            style=self.style,
+            enable_history_search=True,
+            complete_while_typing=True,
+            mouse_support=True,
+        )
+        
+        status = "ativado" if self.syntax_highlighting else "desativado"
+        print(f"Syntax highlighting {status}")
+    
+    def get_input(self, prompt):
+        """Obtém input com syntax highlighting em tempo real"""
+        try:
+            return self.session.prompt(prompt)
+        except KeyboardInterrupt:
+            return ""
+        except EOFError:
+            return ""
     
     def execute_line(self, line):
         """Executa a linha atual e filtra apenas a nova saída"""
@@ -204,9 +282,24 @@ def handle_special_command(command, repl):
         print("  .run      - Executa o código acumulado")
         print("  .undo     - Remove a última linha")
         print("  .block    - Entra no modo bloco")
+        print("  .syntax   - Ativa/desativa syntax highlighting")
+        print("")
+        print("🎨 SYNTAX HIGHLIGHTING EM TEMPO REAL:")
+        print("  - Ciano: Palavras-chave (func, if, while, etc.)")
+        print("  - Magenta: Strings e Funções")
+        print("  - Amarelo: Números")
+        print("  - Azul: Comentários")
+        print("  - Vermelho: Operadores")
+        print("  - Branco: Variáveis e outros")
         print("")
         print("📝 BLOCOS: func/if/while/struct ... end")
         print("  - Duas linhas vazias para finalizar bloco manual")
+        print("")
+        print("✨ RECURSOS:")
+        print("  - Syntax highlighting em tempo real (como IPython)")
+        print("  - Autocompletar com Tab")
+        print("  - Histórico de comandos")
+        print("  - Suporte a mouse")
         return 0
     
     elif cmd in ['.quit', '.exit']:
@@ -218,9 +311,10 @@ def handle_special_command(command, repl):
         return 0
     
     elif cmd == '.version':
-        print("MiniLang JIT Interpreter v1.1")
+        print("MiniLang JIT Interpreter v2.0")
         print("Python 3.13.1")
         print("LLVM JIT Compilation")
+        print("Syntax Highlighting em Tempo Real")
         return 0
     
     elif cmd == '.test':
@@ -249,7 +343,7 @@ def handle_special_command(command, repl):
             return repl.execute_block(repl.code_buffer)
         else:
             print("Buffer vazio - nada para executar")
-            return 0
+        return 0
     
     elif cmd == '.undo':
         if repl.code_buffer:
@@ -267,7 +361,7 @@ def handle_special_command(command, repl):
         empty_count = 0
         while True:
             try:
-                line = input("  > ")
+                line = repl.get_input("  > ")
                 if not line.strip():
                     empty_count += 1
                     if empty_count >= 2:
@@ -284,6 +378,10 @@ def handle_special_command(command, repl):
             return repl.execute_block(block_lines)
         return 0
     
+    elif cmd == '.syntax':
+        repl.toggle_syntax_highlighting()
+        return 0
+    
     else:
         print(f"Comando desconhecido: {command}")
         print("Digite .help para ver os comandos disponíveis")
@@ -291,14 +389,16 @@ def handle_special_command(command, repl):
 
 def main():
     """Inicia o REPL com suporte a blocos MiniLang"""
-    print("=" * 50)
-    print("MiniLang JIT Interpreter - REPL")
-    print("=" * 50)
+    print("=" * 60)
+    print("MiniLang JIT Interpreter - REPL v2.0")
+    print("=" * 60)
     print("Digite código linha por linha. Estado mantido entre linhas.")
+    print("🎨 Syntax highlighting em tempo real (como IPython)")
     print("📝 BLOCOS: func/if/while/struct ... end")
     print("  - Duas linhas vazias para finalizar bloco manual")
-    print("Comandos: .help .quit .clear .reset")
-    print("=" * 50)
+    print("✨ RECURSOS: Autocompletar (Tab) | Histórico | Mouse")
+    print("Comandos: .help .quit .clear .reset .syntax")
+    print("=" * 60)
     
     repl = MiniLangBlockREPL()
     
@@ -311,8 +411,8 @@ def main():
                 else:
                     prompt = f"minilang[{repl.line_number}]> "
                 
-                # Capturar input
-                line = input(prompt)
+                # Capturar input com syntax highlighting em tempo real
+                line = repl.get_input(prompt)
                 
                 # Verificar se é comando especial
                 if line.startswith('.'):
@@ -369,7 +469,6 @@ def main():
                         repl.empty_line_count = 0
                         opens, closes = repl.count_block_changes(line)
                         repl.indent_level += opens - closes
-
                         continue
                     else:
                         # Linha única
