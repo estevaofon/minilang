@@ -43,7 +43,7 @@ class MiniLangJIT:
         llvm.initialize_native_target()
         llvm.initialize_native_asmprinter()
         
-        # Criar target machine
+        # Criar target machine com configurações mínimas
         target = llvm.Target.from_default_triple()
         self.target_machine = target.create_target_machine()
         
@@ -293,6 +293,7 @@ class MiniLangJIT:
             
             # Criar JIT engine
             try:
+                # Usar configurações mais simples para evitar problemas de target
                 engine = llvm.create_mcjit_compiler(mod, self.target_machine)
                 if self.debug:
                     print("[DEBUG] JIT engine criado e módulo adicionado")
@@ -347,6 +348,175 @@ class MiniLangJIT:
                 import traceback
                 traceback.print_exc()
             return 1
+    
+    def execute_line(self, line: str) -> int:
+        """Executa uma única linha de código MiniLang"""
+        try:
+            # Remover espaços em branco e verificar se a linha está vazia
+            line = line.strip()
+            if not line:
+                return 0
+            
+            # Verificar se é um comando especial
+            if line.startswith('.'):
+                return self._handle_special_command(line)
+            
+            # Compilar e executar a linha
+            if self.debug:
+                print(f"[DEBUG] Executando linha: {line}")
+            
+            # Compilar para LLVM IR
+            llvm_ir = self._compile_with_casting_functions(line)
+            
+            # Parsear LLVM IR
+            try:
+                mod = llvm.parse_assembly(llvm_ir)
+                if self.debug:
+                    print("[DEBUG] Módulo LLVM verificado")
+            except Exception as e:
+                print(f"Erro ao parsear LLVM IR: {e}")
+                return 1
+            
+            # Criar JIT engine com configurações mais simples
+            try:
+                # Usar configurações mais simples para evitar problemas de target
+                engine = llvm.create_mcjit_compiler(mod, self.target_machine)
+                if self.debug:
+                    print("[DEBUG] JIT engine criado e módulo adicionado")
+                
+                # Armazenar referência do engine para uso nos wrappers
+                self._engine = engine
+                
+                # Linkar funções de casting
+                self._link_functions(engine)
+                
+                # Executar main
+                main_ptr = engine.get_function_address("main")
+                if self.debug:
+                    print(f"[DEBUG] Endereço da função main: {main_ptr}")
+                if not main_ptr:
+                    print("Erro: Função 'main' não encontrada")
+                    return 1
+                
+                # Executar
+                main_func = ctypes.CFUNCTYPE(ctypes.c_int)(main_ptr)
+                try:
+                    result = main_func()
+                    if self.debug:
+                        print(f"[DEBUG] Função main executada com sucesso, retorno: {result}")
+                except Exception as e:
+                    if self.debug:
+                        print(f"[DEBUG] Erro durante execução da função main: {e}")
+                        import traceback
+                        traceback.print_exc()
+                    result = 1
+                
+                # Flush após executar
+                import sys
+                sys.stdout.flush()
+                
+                return result
+                
+            except Exception as e:
+                print(f"Erro durante execução: {e}")
+                if self.debug:
+                    import traceback
+                    traceback.print_exc()
+                return 1
+                
+        except Exception as e:
+            print(f"Erro durante execução: {e}")
+            if self.debug:
+                import traceback
+                traceback.print_exc()
+            return 1
+    
+    def _handle_special_command(self, command: str) -> int:
+        """Manipula comandos especiais do REPL"""
+        cmd = command.lower().strip()
+        
+        if cmd == '.help':
+            print("Comandos especiais:")
+            print("  .help     - Mostra esta ajuda")
+            print("  .quit     - Sai do REPL")
+            print("  .exit     - Sai do REPL")
+            print("  .clear    - Limpa a tela")
+            print("  .debug    - Ativa/desativa modo debug")
+            print("  .version  - Mostra a versão do interpretador")
+            return 0
+        
+        elif cmd in ['.quit', '.exit']:
+            print("Saindo do REPL...")
+            return -1  # Código especial para sair
+        
+        elif cmd == '.clear':
+            import os
+            os.system('cls' if os.name == 'nt' else 'clear')
+            return 0
+        
+        elif cmd == '.debug':
+            self.debug = not self.debug
+            print(f"Debug {'ativado' if self.debug else 'desativado'}")
+            return 0
+        
+        elif cmd == '.version':
+            print("MiniLang JIT Interpreter v1.1")
+            print("Python 3.13.1")
+            print("LLVM JIT Compilation")
+            return 0
+        
+        else:
+            print(f"Comando desconhecido: {command}")
+            print("Digite .help para ver os comandos disponíveis")
+            return 0
+    
+    def start_repl(self):
+        """Inicia o REPL interativo"""
+        print("=" * 60)
+        print("MiniLang JIT Interpreter - REPL Mode")
+        print("=" * 60)
+        print("Digite código MiniLang linha por linha.")
+        print("Comandos especiais começam com '.' (ex: .help)")
+        print("Pressione Ctrl+C ou digite .quit para sair")
+        print("=" * 60)
+        
+        line_number = 1
+        
+        try:
+            while True:
+                try:
+                    # Prompt personalizado
+                    prompt = f"minilang[{line_number}]> "
+                    line = input(prompt)
+                    
+                    # Executar a linha
+                    result = self.execute_line(line)
+                    
+                    # Verificar se deve sair
+                    if result == -1:
+                        break
+                    
+                    line_number += 1
+                    
+                except KeyboardInterrupt:
+                    print("\nSaindo do REPL...")
+                    break
+                except EOFError:
+                    print("\nSaindo do REPL...")
+                    break
+                except Exception as e:
+                    print(f"Erro inesperado: {e}")
+                    if self.debug:
+                        import traceback
+                        traceback.print_exc()
+        
+        except Exception as e:
+            print(f"Erro fatal no REPL: {e}")
+            if self.debug:
+                import traceback
+                traceback.print_exc()
+        
+        print("REPL finalizado.")
     
     def _link_functions(self, engine):
         """Linka funções externas pré-compiladas"""
