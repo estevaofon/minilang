@@ -6,4 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "llvmlite>=0.44.0",
+    "colorama>=0.4.6",
+    "prompt-toolkit>=3.0.51",
+    "pygments>=2.19.2",
 ]
