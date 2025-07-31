@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 MiniLang Block REPL - Versão que entende a sintaxe correta da MiniLang
-Com Syntax Highlighting em Tempo Real
+Com Syntax Highlighting em Tempo Real e Isolamento de Erros
 """
 
 import sys
@@ -30,13 +30,16 @@ class MiniLangBlockREPL:
         self.indent_level = 0
         self.empty_line_count = 0  # Contador de linhas vazias consecutivas
         self.syntax_highlighting = True  # Flag para ativar/desativar highlighting
+        self.error_count = 0  # Contador de erros para estatísticas
+        self.last_error = None  # Último erro ocorrido
         
         # Configurar prompt_toolkit com PygmentsLexer
         self.lexer = PygmentsLexer(PythonLexer)
         
         # Completador
         commands = ['.help', '.quit', '.exit', '.clear', '.version', 
-                   '.test', '.reset', '.show', '.run', '.undo', '.block', '.syntax']
+                   '.test', '.reset', '.show', '.run', '.undo', '.block', '.syntax',
+                   '.status', '.errors']
         keywords = ['func', 'if', 'then', 'else', 'while', 'do', 'end', 'return',
                    'let', 'global', 'print', 'struct', 'length', 'to_str']
         types = ['int', 'float', 'string', 'void', 'bool']
@@ -97,9 +100,48 @@ class MiniLangBlockREPL:
         except EOFError:
             return ""
     
-    def execute_line(self, line):
-        """Executa a linha atual e filtra apenas a nova saída"""
+    def safe_execute(self, execution_func, *args, **kwargs):
+        """Executa uma função de forma segura com isolamento de erros"""
         try:
+            return execution_func(*args, **kwargs)
+        except subprocess.TimeoutExpired:
+            error_msg = "⏰ Timeout: Execução demorou muito tempo"
+            print(f"{Fore.RED}{error_msg}{Style.RESET_ALL}")
+            self.error_count += 1
+            self.last_error = error_msg
+            return 1
+        except subprocess.CalledProcessError as e:
+            error_msg = f"🚫 Erro de execução (código {e.returncode}): {e.stderr if e.stderr else 'Erro desconhecido'}"
+            print(f"{Fore.RED}{error_msg}{Style.RESET_ALL}")
+            self.error_count += 1
+            self.last_error = error_msg
+            return e.returncode
+        except FileNotFoundError:
+            error_msg = "❌ Erro: Interpreter não encontrado (interpreter_jit.py)"
+            print(f"{Fore.RED}{error_msg}{Style.RESET_ALL}")
+            self.error_count += 1
+            self.last_error = error_msg
+            return 1
+        except PermissionError:
+            error_msg = "🔒 Erro: Sem permissão para executar o interpretador"
+            print(f"{Fore.RED}{error_msg}{Style.RESET_ALL}")
+            self.error_count += 1
+            self.last_error = error_msg
+            return 1
+        except Exception as e:
+            error_msg = f"💥 Erro inesperado: {str(e)}"
+            print(f"{Fore.RED}{error_msg}{Style.RESET_ALL}")
+            self.error_count += 1
+            self.last_error = error_msg
+            return 1
+    
+    def execute_line(self, line):
+        """Executa a linha atual e filtra apenas a nova saída com isolamento de erros"""
+        def _execute():
+            # Salvar o estado atual do buffer
+            original_buffer = self.code_buffer.copy()
+            original_output = self.last_output
+            
             # Adicionar a linha atual ao buffer
             self.code_buffer.append(line)
             
@@ -108,47 +150,61 @@ class MiniLangBlockREPL:
                 f.write('\n'.join(self.code_buffer) + '\n')
                 temp_file = f.name
             
-            # Executar o arquivo temporário
-            result = subprocess.run([
-                sys.executable, 'interpreter_jit.py', temp_file
-            ], capture_output=True, text=True, timeout=10)
-            
-            # Limpar arquivo temporário
             try:
-                os.unlink(temp_file)
-            except:
-                pass
-            
-            # Filtrar apenas a nova saída
-            current_output = result.stdout
-            if current_output.startswith(self.last_output):
-                new_output = current_output[len(self.last_output):]
-                if new_output:
-                    print(new_output, end='')
-            else:
-                # Se não conseguir filtrar, mostrar tudo
-                if current_output:
-                    print(current_output, end='')
-            
-            # Atualizar a saída anterior
-            self.last_output = current_output
-            
-            # Mostrar erros (se houver)
-            if result.stderr and "LLVM" not in result.stderr:
-                print(result.stderr, end='')
-            
-            return result.returncode
-            
-        except subprocess.TimeoutExpired:
-            print("Timeout: Execução demorou muito tempo")
-            return 1
-        except Exception as e:
-            print(f"Erro: {e}")
-            return 1
+                # Executar o arquivo temporário
+                result = subprocess.run([
+                    sys.executable, 'interpreter_jit.py', temp_file
+                ], capture_output=True, text=True, timeout=10)
+                
+                # Se houve erro (returncode != 0), fazer rollback
+                if result.returncode != 0:
+                    # Restaurar o buffer original
+                    self.code_buffer = original_buffer
+                    self.last_output = original_output
+                    
+                    # Mostrar o erro de forma clara
+                    error_msg = result.stderr.strip() if result.stderr else "Erro desconhecido"
+                    if error_msg and "LLVM" not in error_msg:
+                        print(f"{Fore.RED}❌ ERRO: {error_msg}{Style.RESET_ALL}")
+                    
+                    return result.returncode
+                
+                # Se não houve erro, processar a saída normalmente
+                current_output = result.stdout
+                if current_output.startswith(self.last_output):
+                    new_output = current_output[len(self.last_output):]
+                    if new_output:
+                        print(new_output, end='')
+                else:
+                    # Se não conseguir filtrar, mostrar tudo
+                    if current_output:
+                        print(current_output, end='')
+                
+                # Atualizar a saída anterior
+                self.last_output = current_output
+                
+                # Mostrar warnings (se houver) mas não quebrar a execução
+                if result.stderr and "LLVM" not in result.stderr:
+                    print(f"{Fore.YELLOW}⚠️  WARNING: {result.stderr.strip()}{Style.RESET_ALL}")
+                
+                return result.returncode
+                
+            finally:
+                # Limpar arquivo temporário
+                try:
+                    os.unlink(temp_file)
+                except:
+                    pass
+        
+        return self.safe_execute(_execute)
     
     def execute_block(self, block_lines):
-        """Executa um bloco de código"""
-        try:
+        """Executa um bloco de código com isolamento de erros"""
+        def _execute():
+            # Salvar o estado atual do buffer
+            original_buffer = self.code_buffer.copy()
+            original_output = self.last_output
+            
             # Adicionar todas as linhas do bloco ao buffer
             for line in block_lines:
                 self.code_buffer.append(line)
@@ -158,43 +214,53 @@ class MiniLangBlockREPL:
                 f.write('\n'.join(self.code_buffer) + '\n')
                 temp_file = f.name
             
-            # Executar o arquivo temporário
-            result = subprocess.run([
-                sys.executable, 'interpreter_jit.py', temp_file
-            ], capture_output=True, text=True, timeout=10)
-            
-            # Limpar arquivo temporário
             try:
-                os.unlink(temp_file)
-            except:
-                pass
-            
-            # Filtrar apenas a nova saída
-            current_output = result.stdout
-            if current_output.startswith(self.last_output):
-                new_output = current_output[len(self.last_output):]
-                if new_output:
-                    print(new_output, end='')
-            else:
-                # Se não conseguir filtrar, mostrar tudo
-                if current_output:
-                    print(current_output, end='')
-            
-            # Atualizar a saída anterior
-            self.last_output = current_output
-            
-            # Mostrar erros (se houver)
-            if result.stderr and "LLVM" not in result.stderr:
-                print(result.stderr, end='')
-            
-            return result.returncode
-            
-        except subprocess.TimeoutExpired:
-            print("Timeout: Execução demorou muito tempo")
-            return 1
-        except Exception as e:
-            print(f"Erro: {e}")
-            return 1
+                # Executar o arquivo temporário
+                result = subprocess.run([
+                    sys.executable, 'interpreter_jit.py', temp_file
+                ], capture_output=True, text=True, timeout=10)
+                
+                # Se houve erro (returncode != 0), fazer rollback
+                if result.returncode != 0:
+                    # Restaurar o buffer original
+                    self.code_buffer = original_buffer
+                    self.last_output = original_output
+                    
+                    # Mostrar o erro de forma clara
+                    error_msg = result.stderr.strip() if result.stderr else "Erro desconhecido"
+                    if error_msg and "LLVM" not in error_msg:
+                        print(f"{Fore.RED}❌ ERRO: {error_msg}{Style.RESET_ALL}")
+                    
+                    return result.returncode
+                
+                # Se não houve erro, processar a saída normalmente
+                current_output = result.stdout
+                if current_output.startswith(self.last_output):
+                    new_output = current_output[len(self.last_output):]
+                    if new_output:
+                        print(new_output, end='')
+                else:
+                    # Se não conseguir filtrar, mostrar tudo
+                    if current_output:
+                        print(current_output, end='')
+                
+                # Atualizar a saída anterior
+                self.last_output = current_output
+                
+                # Mostrar warnings (se houver) mas não quebrar a execução
+                if result.stderr and "LLVM" not in result.stderr:
+                    print(f"{Fore.YELLOW}⚠️  WARNING: {result.stderr.strip()}{Style.RESET_ALL}")
+                
+                return result.returncode
+                
+            finally:
+                # Limpar arquivo temporário
+                try:
+                    os.unlink(temp_file)
+                except:
+                    pass
+        
+        return self.safe_execute(_execute)
     
     def analyze_line(self, line):
         """Analisa uma linha para detectar início/fim de blocos"""
@@ -264,6 +330,17 @@ class MiniLangBlockREPL:
             self.code_buffer.pop()
             # Resetar a saída anterior para forçar recálculo
             self.last_output = ""
+    
+    def get_status(self):
+        """Retorna o status atual do REPL"""
+        return {
+            'line_number': self.line_number,
+            'buffer_size': len(self.code_buffer),
+            'error_count': self.error_count,
+            'last_error': self.last_error,
+            'block_mode': self.block_mode,
+            'indent_level': self.indent_level
+        }
 
 def handle_special_command(command, repl):
     """Manipula comandos especiais"""
@@ -283,6 +360,8 @@ def handle_special_command(command, repl):
         print("  .undo     - Remove a última linha")
         print("  .block    - Entra no modo bloco")
         print("  .syntax   - Ativa/desativa syntax highlighting")
+        print("  .status   - Mostra status do REPL")
+        print("  .errors   - Mostra estatísticas de erros")
         print("")
         print("🎨 SYNTAX HIGHLIGHTING EM TEMPO REAL:")
         print("  - Ciano: Palavras-chave (func, if, while, etc.)")
@@ -294,6 +373,11 @@ def handle_special_command(command, repl):
         print("")
         print("📝 BLOCOS: func/if/while/struct ... end")
         print("  - Duas linhas vazias para finalizar bloco manual")
+        print("")
+        print("🛡️ ISOLAMENTO DE ERROS:")
+        print("  - Erros não afetam comandos subsequentes")
+        print("  - Estado do REPL mantido após erros")
+        print("  - Feedback claro sobre erros")
         print("")
         print("✨ RECURSOS:")
         print("  - Syntax highlighting em tempo real (como IPython)")
@@ -315,6 +399,7 @@ def handle_special_command(command, repl):
         print("Python 3.13.1")
         print("LLVM JIT Compilation")
         print("Syntax Highlighting em Tempo Real")
+        print("Isolamento de Erros Ativo")
         return 0
     
     elif cmd == '.test':
@@ -382,13 +467,35 @@ def handle_special_command(command, repl):
         repl.toggle_syntax_highlighting()
         return 0
     
+    elif cmd == '.status':
+        status = repl.get_status()
+        print(f"📊 Status do REPL:")
+        print(f"  Linha atual: {status['line_number']}")
+        print(f"  Buffer: {status['buffer_size']} linhas")
+        print(f"  Erros: {status['error_count']}")
+        print(f"  Modo bloco: {'Sim' if status['block_mode'] else 'Não'}")
+        print(f"  Nível de indentação: {status['indent_level']}")
+        if status['last_error']:
+            print(f"  Último erro: {status['last_error']}")
+        return 0
+    
+    elif cmd == '.errors':
+        status = repl.get_status()
+        print(f"📈 Estatísticas de Erros:")
+        print(f"  Total de erros: {status['error_count']}")
+        if status['last_error']:
+            print(f"  Último erro: {status['last_error']}")
+        else:
+            print("  Nenhum erro registrado")
+        return 0
+    
     else:
         print(f"Comando desconhecido: {command}")
         print("Digite .help para ver os comandos disponíveis")
         return 0
 
 def main():
-    """Inicia o REPL com suporte a blocos MiniLang"""
+    """Inicia o REPL com suporte a blocos MiniLang e isolamento de erros"""
     print("=" * 60)
     print("MiniLang JIT Interpreter - REPL v2.0")
     print("=" * 60)
@@ -396,8 +503,9 @@ def main():
     print("🎨 Syntax highlighting em tempo real (como IPython)")
     print("📝 BLOCOS: func/if/while/struct ... end")
     print("  - Duas linhas vazias para finalizar bloco manual")
+    print("🛡️ ISOLAMENTO DE ERROS: Erros não afetam comandos subsequentes")
     print("✨ RECURSOS: Autocompletar (Tab) | Histórico | Mouse")
-    print("Comandos: .help .quit .clear .reset .syntax")
+    print("Comandos: .help .quit .clear .reset .syntax .status .errors")
     print("=" * 60)
     
     repl = MiniLangBlockREPL()
@@ -487,10 +595,13 @@ def main():
                 print("\nSaindo do REPL...")
                 break
             except Exception as e:
-                print(f"Erro inesperado: {e}")
+                print(f"{Fore.RED}Erro inesperado no REPL: {e}{Style.RESET_ALL}")
+                repl.error_count += 1
+                repl.last_error = f"Erro interno: {e}"
+                # Continuar executando mesmo após erro interno
     
     except Exception as e:
-        print(f"Erro fatal no REPL: {e}")
+        print(f"{Fore.RED}Erro fatal no REPL: {e}{Style.RESET_ALL}")
     
     print("REPL finalizado.")
 
