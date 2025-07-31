@@ -15,9 +15,41 @@ from prompt_toolkit.lexers import PygmentsLexer
 from prompt_toolkit.styles import Style as PromptStyle
 from prompt_toolkit.completion import WordCompleter
 from pygments.lexers import PythonLexer
+from pygments.lexer import RegexLexer, bygroups
+from pygments.token import *
 
 # Inicializar colorama para suporte cross-platform
 init(autoreset=True)
+
+class MiniLangLexer(RegexLexer):
+    """Lexer customizado para MiniLang"""
+    name = 'MiniLang'
+    aliases = ['minilang', 'ml']
+    filenames = ['*.ml']
+    
+    tokens = {
+        'root': [
+            # Keywords
+            (r'\b(func|if|then|else|while|do|end|return|let|global|print|struct|length|to_str)\b', Keyword),
+            # Types
+            (r'\b(int|float|string|void|bool)\b', Keyword.Type),
+            # Strings
+            (r'"[^"]*"', String),
+            # Numbers
+            (r'\b\d+\b', Number.Integer),
+            (r'\b\d+\.\d+\b', Number.Float),
+            # Comments
+            (r'#.*$', Comment),
+            # Operators
+            (r'[+\-*/=<>!&|]', Operator),
+            # Punctuation
+            (r'[(),;:]', Punctuation),
+            # Identifiers
+            (r'\b[a-zA-Z_][a-zA-Z0-9_]*\b', Name),
+            # Whitespace
+            (r'\s+', Text),
+        ]
+    }
 
 class MiniLangBlockREPL:
     def __init__(self):
@@ -29,14 +61,14 @@ class MiniLangBlockREPL:
         self.block_stack = []  # Pilha para controlar blocos aninhados
         self.indent_level = 0
         self.empty_line_count = 0  # Contador de linhas vazias consecutivas
-        self.syntax_highlighting = False  # Desativado por padrão para melhor performance
+        self.syntax_highlighting = True  # Ativado por padrão
         self.error_count = 0  # Contador de erros para estatísticas
         self.last_error = None  # Último erro ocorrido
         
         # Completador
         commands = ['.help', '.quit', '.exit', '.clear', '.version', 
                    '.test', '.reset', '.show', '.run', '.undo', '.block', '.syntax',
-                   '.status', '.errors', '.fast', '.slow']
+                   '.status', '.errors', '.fast']
         keywords = ['func', 'if', 'then', 'else', 'while', 'do', 'end', 'return',
                    'let', 'global', 'print', 'struct', 'length', 'to_str']
         types = ['int', 'float', 'string', 'void', 'bool']
@@ -46,16 +78,19 @@ class MiniLangBlockREPL:
         # Estilo para as cores (simplificado)
         self.style = PromptStyle.from_dict({
             'pygments.keyword': 'ansicyan bold',
+            'pygments.keyword.type': 'ansigreen bold',
             'pygments.string': 'ansimagenta',
             'pygments.number': 'ansiyellow',
             'pygments.comment': 'ansiblue',
             'pygments.operator': 'ansired',
             'pygments.name': 'ansiwhite',
+            'pygments.punctuation': 'ansiwhite',
         })
         
-        # Sessão do prompt (sem lexer por padrão para melhor performance)
+        # Sessão do prompt (com lexer por padrão)
+        self.lexer = PygmentsLexer(MiniLangLexer)
         self.session = PromptSession(
-            lexer=None,  # Sem syntax highlighting por padrão
+            lexer=self.lexer,  # Com syntax highlighting por padrão
             completer=self.completer,
             style=self.style,
             enable_history_search=True,
@@ -71,7 +106,7 @@ class MiniLangBlockREPL:
         
         # Recriar sessão com novo lexer
         if self.syntax_highlighting:
-            self.lexer = PygmentsLexer(PythonLexer)
+            self.lexer = PygmentsLexer(MiniLangLexer)
             self.session = PromptSession(
                 lexer=self.lexer,
                 completer=self.completer,
@@ -96,8 +131,6 @@ class MiniLangBlockREPL:
         
         status = "ativado" if self.syntax_highlighting else "desativado"
         print(f"Syntax highlighting {status}")
-        if self.syntax_highlighting:
-            print(f"{Fore.YELLOW}⚠️  Syntax highlighting pode causar lentidão em alguns terminais{Style.RESET_ALL}")
     
     def enable_fast_mode(self):
         """Ativa modo rápido (sem syntax highlighting)"""
@@ -105,25 +138,23 @@ class MiniLangBlockREPL:
             self.toggle_syntax_highlighting()
         print("🚀 Modo rápido ativado - Syntax highlighting desativado para melhor performance")
     
-    def enable_slow_mode(self):
-        """Ativa modo lento (com syntax highlighting)"""
-        if not self.syntax_highlighting:
-            self.toggle_syntax_highlighting()
-        print("🐌 Modo lento ativado - Syntax highlighting ativado")
-    
     def get_input(self, prompt):
         """Obtém input usando prompt_toolkit otimizado"""
         try:
             return self.session.prompt(prompt)
         except KeyboardInterrupt:
-            return ""
+            raise KeyboardInterrupt  # Re-raise para ser capturado no main
         except EOFError:
-            return ""
+            raise EOFError  # Re-raise para ser capturado no main
         except Exception as e:
             # Fallback para input simples em caso de erro
             print(f"{Fore.YELLOW}⚠️  Erro no input, usando modo simples: {e}{Style.RESET_ALL}")
             try:
                 return input(prompt)
+            except KeyboardInterrupt:
+                raise KeyboardInterrupt
+            except EOFError:
+                raise EOFError
             except:
                 return ""
     
@@ -392,13 +423,11 @@ def handle_special_command(command, repl):
         print("  .status   - Mostra status do REPL")
         print("  .errors   - Mostra estatísticas de erros")
         print("  .fast     - Ativa modo rápido (sem syntax highlighting)")
-        print("  .slow     - Ativa modo lento (com syntax highlighting)")
         print("")
         print("🎨 SYNTAX HIGHLIGHTING:")
-        print("  - Desativado por padrão para melhor performance")
-        print("  - Use .syntax, .fast ou .slow para controlar")
-        print("  - .fast = modo responsivo, .slow = modo visual")
-        print("  - Cores: Ciano (keywords), Magenta (strings), Amarelo (números)")
+        print("  - Ativado por padrão para melhor performance")
+        print("  - Use .syntax para desativar")
+        print("  - Cores: Ciano (keywords), Verde (tipos), Magenta (strings), Amarelo (números)")
         print("  - Em tempo real quando ativado")
         print("")
         print("📝 BLOCOS: func/if/while/struct ... end")
@@ -415,7 +444,7 @@ def handle_special_command(command, repl):
         print("  - Histórico de comandos")
         print("  - Copiar/colar funcionando normalmente")
         print("  - Ctrl+C para sair a qualquer momento")
-        print("  - Syntax highlighting quando ativado")
+        print("  - Syntax highlighting ativado por padrão")
         return 0
     
     elif cmd in ['.quit', '.exit']:
@@ -427,10 +456,10 @@ def handle_special_command(command, repl):
         return 0
     
     elif cmd == '.version':
-        print("MiniLang JIT Interpreter v2.3")
+        print("MiniLang JIT Interpreter v2.4")
         print("Python 3.13.1")
         print("LLVM JIT Compilation")
-        print("Input Otimizado Responsivo")
+        print("Syntax Highlighting Ativado")
         print("Isolamento de Erros Ativo")
         return 0
     
@@ -503,10 +532,6 @@ def handle_special_command(command, repl):
         repl.enable_fast_mode()
         return 0
     
-    elif cmd == '.slow':
-        repl.enable_slow_mode()
-        return 0
-    
     elif cmd == '.status':
         status = repl.get_status()
         print(f"📊 Status do REPL:")
@@ -537,15 +562,15 @@ def handle_special_command(command, repl):
 def main():
     """Inicia o REPL com suporte a blocos MiniLang e isolamento de erros"""
     print("=" * 60)
-    print("MiniLang JIT Interpreter - REPL v2.3")
+    print("MiniLang JIT Interpreter - REPL v2.4")
     print("=" * 60)
     print("Digite código linha por linha. Estado mantido entre linhas.")
-    print("🚀 MODO RÁPIDO: Input otimizado sem bloqueios")
+    print("🎨 SYNTAX HIGHLIGHTING: Ativado por padrão")
     print("📝 BLOCOS: func/if/while/struct ... end")
     print("  - Duas linhas vazias para finalizar bloco manual")
     print("🛡️ ISOLAMENTO DE ERROS: Erros não afetam comandos subsequentes")
     print("✨ RECURSOS: Autocompletar | Histórico | Copiar/Colar | Ctrl+C para sair")
-    print("Comandos: .help .quit .clear .reset .syntax .fast .slow .status .errors")
+    print("Comandos: .help .quit .clear .reset .syntax .fast .status .errors")
     print("=" * 60)
     
     repl = MiniLangBlockREPL()
