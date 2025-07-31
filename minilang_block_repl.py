@@ -562,13 +562,8 @@ def handle_special_command(command, repl):
 def main():
     """Inicia o REPL com suporte a blocos MiniLang e isolamento de erros"""
     print("=" * 60)
-    print("MiniLang JIT Interpreter - REPL v2.4")
+    print("MiniLang JIT Interpreter - REPL")
     print("=" * 60)
-    print("Digite código linha por linha. Estado mantido entre linhas.")
-    print("🎨 SYNTAX HIGHLIGHTING: Ativado por padrão")
-    print("📝 BLOCOS: func/if/while/struct ... end")
-    print("  - Duas linhas vazias para finalizar bloco manual")
-    print("🛡️ ISOLAMENTO DE ERROS: Erros não afetam comandos subsequentes")
     print("✨ RECURSOS: Autocompletar | Histórico | Copiar/Colar | Ctrl+C para sair")
     print("Comandos: .help .quit .clear .reset .syntax .fast .status .errors")
     print("=" * 60)

@@ -1202,6 +1202,8 @@ class LLVMCodeGenerator:
         # Sistema de gestão de memória
         self.allocated_ptrs = []  # Lista de ponteiros alocados para liberação
         self.memory_tracking = True  # Habilitar rastreamento de memória
+        self.allocation_array = None  # Array para armazenar ponteiros alocados
+        self.allocation_count = None  # Contador de alocações
         
         # Tipos básicos LLVM
         self.int_type = ir.IntType(64)
@@ -1395,6 +1397,19 @@ class LLVMCodeGenerator:
         self.current_function = main_func
         self.local_vars = {}
         
+        # Criar array de alocações no início da função para garantir dominância
+        if self.memory_tracking:
+            self.allocation_array = self.builder.alloca(
+                ir.ArrayType(self.char_type.as_pointer(), 100), 
+                name="allocation_array"
+            )
+            self.allocation_count = self.builder.alloca(
+                self.int_type, 
+                name="allocation_count"
+            )
+            # Inicializar contador
+            self.builder.store(ir.Constant(self.int_type, 0), self.allocation_count)
+        
         # No Windows, configurar UTF-8 no início do programa
         if sys.platform == "win32":
             self._setup_windows_utf8()
@@ -1435,24 +1450,99 @@ class LLVMCodeGenerator:
     def _track_allocation(self, ptr_value: ir.Value):
         """Rastreia uma alocação de memória para liberação posterior"""
         if self.memory_tracking and ptr_value:
-            self.allocated_ptrs.append(ptr_value)
+            # Armazenar o ponteiro em uma variável local para garantir dominância
+            if hasattr(self, 'current_function') and self.current_function:
+                # Verificar se o array de alocações já foi criado
+                if hasattr(self, 'allocation_array') and self.allocation_array is not None:
+                    # Armazenar o ponteiro no array
+                    count_ptr = self.builder.load(self.allocation_count)
+                    array_elem_ptr = self.builder.gep(
+                        self.allocation_array, 
+                        [ir.Constant(self.int_type, 0), count_ptr], 
+                        inbounds=True
+                    )
+                    self.builder.store(ptr_value, array_elem_ptr)
+                    
+                    # Incrementar contador
+                    new_count = self.builder.add(count_ptr, ir.Constant(self.int_type, 1))
+                    self.builder.store(new_count, self.allocation_count)
+                else:
+                    # Fallback para a lista antiga se o array não foi criado
+                    self.allocated_ptrs.append(ptr_value)
+            else:
+                self.allocated_ptrs.append(ptr_value)
     
     def _add_memory_cleanup(self):
         """Adiciona código para liberar toda a memória alocada"""
-        if not self.memory_tracking or not self.allocated_ptrs:
+        if not self.memory_tracking:
             return
         
-        # Adicionar comentário no código
-        cleanup_comment = "// Liberando memória alocada"
-        # Nota: LLVM IR não suporta comentários diretamente, mas podemos adicionar labels
-        
-        # Liberar cada ponteiro alocado
-        for ptr in self.allocated_ptrs:
-            if isinstance(ptr.type, ir.PointerType):
-                self.builder.call(self.free, [ptr])
-        
-        # Limpar a lista após liberação
-        self.allocated_ptrs.clear()
+        # Se temos um array de alocações, liberar todos os ponteiros nele
+        if hasattr(self, 'allocation_array') and self.allocation_array is not None:
+            # Carregar contador
+            count_ptr = self.builder.load(self.allocation_count)
+            
+            # Criar loop para liberar todos os ponteiros
+            i_ptr = self.builder.alloca(self.int_type, name="cleanup_i")
+            self.builder.store(ir.Constant(self.int_type, 0), i_ptr)
+            
+            # Bloco de condição do loop
+            cond_block = self.current_function.append_basic_block(name="cleanup_cond")
+            body_block = self.current_function.append_basic_block(name="cleanup_body")
+            end_block = self.current_function.append_basic_block(name="cleanup_end")
+            
+            self.builder.branch(cond_block)
+            
+            # Bloco de condição
+            self.builder.position_at_end(cond_block)
+            i_val = self.builder.load(i_ptr)
+            condition = self.builder.icmp_signed('<', i_val, count_ptr)
+            self.builder.cbranch(condition, body_block, end_block)
+            
+            # Bloco do corpo do loop
+            self.builder.position_at_end(body_block)
+            
+            # Carregar ponteiro do array
+            array_elem_ptr = self.builder.gep(
+                self.allocation_array, 
+                [ir.Constant(self.int_type, 0), i_val], 
+                inbounds=True
+            )
+            ptr_to_free = self.builder.load(array_elem_ptr)
+            
+            # Liberar o ponteiro
+            self.builder.call(self.free, [ptr_to_free])
+            
+            # Incrementar i
+            new_i = self.builder.add(i_val, ir.Constant(self.int_type, 1))
+            self.builder.store(new_i, i_ptr)
+            
+            # Voltar para condição
+            self.builder.branch(cond_block)
+            
+            # Continuar após o loop
+            self.builder.position_at_end(end_block)
+            
+            # Limpar referências
+            self.allocation_array = None
+            self.allocation_count = None
+        else:
+            # Fallback para o método antigo
+            if not self.allocated_ptrs:
+                return
+            
+            # Liberar cada ponteiro alocado
+            for ptr in self.allocated_ptrs:
+                if isinstance(ptr.type, ir.PointerType):
+                    # Se é uma variável local (alloca), carregar o valor
+                    if isinstance(ptr, ir.AllocaInstr):
+                        loaded_ptr = self.builder.load(ptr)
+                        self.builder.call(self.free, [loaded_ptr])
+                    else:
+                        self.builder.call(self.free, [ptr])
+            
+            # Limpar a lista após liberação
+            self.allocated_ptrs.clear()
     
     def _cleanup_function_memory(self):
         """Libera memória alocada dentro de uma função"""

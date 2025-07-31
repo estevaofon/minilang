@@ -581,6 +581,18 @@ assert(mensagem == "MiniLang versão 2.0 funcionando!", "String complexa deve se
 
 print("")
 
+print(">> 19. Concatenação de strings em loops")
+let contador: int = 0
+let frase: string = ""
+let array: string[3] = ["ola", "todo", "mundo"]
+while 3 > contador do
+  frase = frase + array[contador]
+  contador = contador + 1
+end
+print(frase)
+assert(frase == "olatodomundo", "String resultante deve ser olatodomundo")
+
+
 // ============================================
 // FINALIZAÇÃO DOS TESTES
 // ============================================
