@@ -171,10 +171,27 @@ class MiniLangBlockREPL:
             self.last_error = error_msg
             return 1
         except subprocess.CalledProcessError as e:
-            error_msg = f"🚫 Erro de execução (código {e.returncode}): {e.stderr if e.stderr else 'Erro desconhecido'}"
-            print(f"{Fore.RED}{error_msg}{Style.RESET_ALL}")
-            self.error_count += 1
-            self.last_error = error_msg
+            # Capturar erros específicos do subprocess
+            error_msg = ""
+            if e.stderr:
+                stderr_content = e.stderr.strip()
+                # SEMPRE mostrar o erro do stderr, pois o interpreter_jit.py já formata corretamente
+                error_msg = stderr_content
+            else:
+                error_msg = f"🚫 Erro de execução (código {e.returncode}): Erro desconhecido"
+            
+            if error_msg:
+                formatted_error = self.format_error_message(error_msg)
+                print(f"{Fore.RED}❌ ERRO: {formatted_error}{Style.RESET_ALL}")
+                
+                # Adicionar sugestão baseada no tipo de erro
+                error_type, suggestion = self.categorize_error(error_msg)
+                if error_type != "general":
+                    print(f"{Fore.BLUE}💡 SUGESTÃO: {suggestion}{Style.RESET_ALL}")
+                
+                self.error_count += 1
+                self.last_error = error_msg
+            
             return e.returncode
         except FileNotFoundError:
             error_msg = "❌ Erro: Interpreter não encontrado (interpreter_jit.py)"
@@ -197,6 +214,14 @@ class MiniLangBlockREPL:
     
     def execute_line(self, line):
         """Executa a linha atual e filtra apenas a nova saída com isolamento de erros"""
+        # Validação básica de sintaxe antes de executar
+        is_valid, error_msg = self.validate_basic_syntax(line)
+        if not is_valid:
+            print(f"{Fore.RED}❌ ERRO DE SINTAXE: {error_msg}{Style.RESET_ALL}")
+            self.error_count += 1
+            self.last_error = f"Erro de sintaxe: {error_msg}"
+            return 1
+        
         def _execute():
             # Salvar o estado atual do buffer
             original_buffer = self.code_buffer.copy()
@@ -216,16 +241,43 @@ class MiniLangBlockREPL:
                     sys.executable, 'interpreter_jit.py', temp_file
                 ], capture_output=True, text=True, timeout=10)
                 
-                # Se houve erro (returncode != 0), fazer rollback
+                # Verificar se há erro
                 if result.returncode != 0:
                     # Restaurar o buffer original
                     self.code_buffer = original_buffer
                     self.last_output = original_output
                     
-                    # Mostrar o erro de forma clara
-                    error_msg = result.stderr.strip() if result.stderr else "Erro desconhecido"
-                    if error_msg and "LLVM" not in error_msg:
-                        print(f"{Fore.RED}❌ ERRO: {error_msg}{Style.RESET_ALL}")
+                    # Verificar se há erro no stdout ou stderr
+                    error_msg = ""
+                    if result.stderr and result.stderr.strip():
+                        error_msg = result.stderr.strip()
+                    elif result.stdout and "Erro durante execução" in result.stdout:
+                        # O erro está no stdout, extrair apenas a parte do erro
+                        lines = result.stdout.split('\n')
+                        for error_line in lines:
+                            if "Erro durante execução" in error_line:
+                                error_msg = error_line.strip()
+                                break
+                    
+                    # SEMPRE mostrar o erro, mesmo se não conseguir extrair a mensagem específica
+                    if error_msg:
+                        formatted_error = self.format_error_message(error_msg)
+                        print(f"{Fore.RED}❌ ERRO: {formatted_error}{Style.RESET_ALL}")
+                        
+                        # Adicionar sugestão baseada no tipo de erro
+                        error_type, suggestion = self.categorize_error(error_msg)
+                        if error_type != "general":
+                            print(f"{Fore.BLUE}💡 SUGESTÃO: {suggestion}{Style.RESET_ALL}")
+                        
+                        self.error_count += 1
+                        self.last_error = error_msg
+                    else:
+                        # Se não conseguiu extrair a mensagem, mostrar o que tem
+                        print(f"{Fore.RED}❌ ERRO: Código de retorno {result.returncode}{Style.RESET_ALL}")
+                        if result.stdout:
+                            print(f"{Fore.RED}stdout: {result.stdout}{Style.RESET_ALL}")
+                        if result.stderr:
+                            print(f"{Fore.RED}stderr: {result.stderr}{Style.RESET_ALL}")
                     
                     return result.returncode
                 
@@ -260,6 +312,15 @@ class MiniLangBlockREPL:
     
     def execute_block(self, block_lines):
         """Executa um bloco de código com isolamento de erros"""
+        # Validação básica de sintaxe para cada linha do bloco
+        for i, line in enumerate(block_lines):
+            is_valid, error_msg = self.validate_basic_syntax(line)
+            if not is_valid:
+                print(f"{Fore.RED}❌ ERRO DE SINTAXE na linha {i+1}: {error_msg}{Style.RESET_ALL}")
+                self.error_count += 1
+                self.last_error = f"Erro de sintaxe na linha {i+1}: {error_msg}"
+                return 1
+        
         def _execute():
             # Salvar o estado atual do buffer
             original_buffer = self.code_buffer.copy()
@@ -286,10 +347,37 @@ class MiniLangBlockREPL:
                     self.code_buffer = original_buffer
                     self.last_output = original_output
                     
-                    # Mostrar o erro de forma clara
-                    error_msg = result.stderr.strip() if result.stderr else "Erro desconhecido"
-                    if error_msg and "LLVM" not in error_msg:
-                        print(f"{Fore.RED}❌ ERRO: {error_msg}{Style.RESET_ALL}")
+                    # Verificar se há erro no stdout ou stderr
+                    error_msg = ""
+                    if result.stderr and result.stderr.strip():
+                        error_msg = result.stderr.strip()
+                    elif result.stdout and "Erro durante execução" in result.stdout:
+                        # O erro está no stdout, extrair apenas a parte do erro
+                        lines = result.stdout.split('\n')
+                        for error_line in lines:
+                            if "Erro durante execução" in error_line:
+                                error_msg = error_line.strip()
+                                break
+                    
+                    # SEMPRE mostrar o erro, mesmo se não conseguir extrair a mensagem específica
+                    if error_msg:
+                        formatted_error = self.format_error_message(error_msg)
+                        print(f"{Fore.RED}❌ ERRO: {formatted_error}{Style.RESET_ALL}")
+                        
+                        # Adicionar sugestão baseada no tipo de erro
+                        error_type, suggestion = self.categorize_error(error_msg)
+                        if error_type != "general":
+                            print(f"{Fore.BLUE}💡 SUGESTÃO: {suggestion}{Style.RESET_ALL}")
+                        
+                        self.error_count += 1
+                        self.last_error = error_msg
+                    else:
+                        # Se não conseguiu extrair a mensagem, mostrar o que tem
+                        print(f"{Fore.RED}❌ ERRO: Código de retorno {result.returncode}{Style.RESET_ALL}")
+                        if result.stdout:
+                            print(f"{Fore.RED}stdout: {result.stdout}{Style.RESET_ALL}")
+                        if result.stderr:
+                            print(f"{Fore.RED}stderr: {result.stderr}{Style.RESET_ALL}")
                     
                     return result.returncode
                 
@@ -401,6 +489,77 @@ class MiniLangBlockREPL:
             'block_mode': self.block_mode,
             'indent_level': self.indent_level
         }
+    
+    def validate_basic_syntax(self, line):
+        """Validação básica de sintaxe para capturar erros comuns rapidamente"""
+        line = line.strip()
+        
+        # Verificar parênteses balanceados
+        if line.count('(') != line.count(')'):
+            return False, "Parênteses não balanceados"
+        
+        # Verificar colchetes balanceados
+        if line.count('[') != line.count(']'):
+            return False, "Colchetes não balanceados"
+        
+        # Verificar chaves balanceadas
+        if line.count('{') != line.count('}'):
+            return False, "Chaves não balanceadas"
+        
+        # Verificar aspas balanceadas
+        if line.count('"') % 2 != 0:
+            return False, "Aspas não balanceadas"
+        
+        # Verificar se há operadores sem operandos
+        operators = ['+', '-', '*', '/', '=', '>', '<', '!', '&', '|']
+        for op in operators:
+            if line.endswith(op) and not line.endswith('='):
+                return False, f"Operador '{op}' sem operando à direita"
+        
+        return True, ""
+    
+    def format_error_message(self, error_msg):
+        """Formata mensagens de erro para melhor legibilidade"""
+        if not error_msg:
+            return error_msg
+        
+        # Remover informações de debug desnecessárias
+        if "[DEBUG]" in error_msg:
+            lines = error_msg.split('\n')
+            filtered_lines = [line for line in lines if "[DEBUG]" not in line]
+            error_msg = '\n'.join(filtered_lines)
+        
+        # Destacar palavras-chave importantes
+        keywords = ['Erro', 'Error', 'SyntaxError', 'NameError', 'TypeError', 'ValueError']
+        for keyword in keywords:
+            if keyword in error_msg:
+                error_msg = error_msg.replace(keyword, f"{Fore.YELLOW}{keyword}{Style.RESET_ALL}")
+        
+        # Destacar números de linha
+        import re
+        line_pattern = r'linha (\d+)'
+        error_msg = re.sub(line_pattern, f'linha {Fore.CYAN}\\1{Style.RESET_ALL}', error_msg)
+        
+        return error_msg
+    
+    def categorize_error(self, error_msg):
+        """Categoriza o tipo de erro para fornecer sugestões úteis"""
+        error_msg_lower = error_msg.lower()
+        
+        if "syntax" in error_msg_lower or "sintaxe" in error_msg_lower:
+            return "syntax", "Verifique a sintaxe da linha. Certifique-se de que todos os parênteses, colchetes e chaves estão balanceados."
+        elif "type" in error_msg_lower or "tipo" in error_msg_lower:
+            return "type", "Erro de tipo. Verifique se está usando os tipos corretos para as operações."
+        elif "name" in error_msg_lower or "nome" in error_msg_lower:
+            return "name", "Variável ou função não definida. Verifique se a variável foi declarada antes de ser usada."
+        elif "value" in error_msg_lower or "valor" in error_msg_lower:
+            return "value", "Erro de valor. Verifique se os valores estão dentro dos limites esperados."
+        elif "function" in error_msg_lower or "função" in error_msg_lower:
+            return "function", "Erro relacionado a função. Verifique se a função existe e se os parâmetros estão corretos."
+        elif "array" in error_msg_lower or "array" in error_msg_lower:
+            return "array", "Erro relacionado a array. Verifique se o índice está dentro dos limites do array."
+        else:
+            return "general", "Erro geral. Verifique o código e tente novamente."
 
 def handle_special_command(command, repl):
     """Manipula comandos especiais"""
