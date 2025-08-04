@@ -3469,8 +3469,21 @@ class LLVMCodeGenerator:
                             
                             # Se é null, criar um novo struct
                             with self.builder.if_then(is_null):
-                                # Calcular tamanho do struct (aproximação)
-                                struct_size = 24  # Tamanho padrão
+                                # Calcular tamanho do struct baseado nos campos
+                                struct_size = 0
+                                for field_type in field_struct_type.elements:
+                                    if isinstance(field_type, ir.IntType):
+                                        if field_type.width == 1:  # bool
+                                            struct_size += 1
+                                        elif field_type.width == 64:  # int
+                                            struct_size += 8
+                                    elif isinstance(field_type, ir.DoubleType):  # float
+                                        struct_size += 8
+                                    elif isinstance(field_type, ir.PointerType):  # string/pointer
+                                        struct_size += 8
+                                
+                                # Alinhar para 8 bytes (padrão x86_64)
+                                struct_size = (struct_size + 7) & ~7
                                 size_val = ir.Constant(ir.IntType(64), struct_size)
                                 new_struct_ptr = self.builder.call(self.malloc, [size_val])
                                 self._track_allocation(new_struct_ptr)
@@ -3503,8 +3516,21 @@ class LLVMCodeGenerator:
                             
                             # Se é null, criar um novo struct
                             with self.builder.if_then(is_null):
-                                # Calcular tamanho do struct (aproximação)
-                                struct_size = 24  # Tamanho padrão
+                                # Calcular tamanho do struct baseado nos campos
+                                struct_size = 0
+                                for field_type in field_struct_type.elements:
+                                    if isinstance(field_type, ir.IntType):
+                                        if field_type.width == 1:  # bool
+                                            struct_size += 1
+                                        elif field_type.width == 64:  # int
+                                            struct_size += 8
+                                    elif isinstance(field_type, ir.DoubleType):  # float
+                                        struct_size += 8
+                                    elif isinstance(field_type, ir.PointerType):  # string/pointer
+                                        struct_size += 8
+                                
+                                # Alinhar para 8 bytes (padrão x86_64)
+                                struct_size = (struct_size + 7) & ~7
                                 size_val = ir.Constant(ir.IntType(64), struct_size)
                                 new_struct_ptr = self.builder.call(self.malloc, [size_val])
                                 self._track_allocation(new_struct_ptr)
@@ -3558,12 +3584,71 @@ class LLVMCodeGenerator:
                 # Armazenar o valor
                 self.builder.store(value, field_ptr)
 
+    def _calculate_struct_size(self, struct_type: ir.LiteralStructType) -> int:
+        """Calcula o tamanho correto de um struct usando as APIs do LLVM"""
+        try:
+            # Tentar usar a API do LLVM para calcular o tamanho
+            target = llvm.Target.from_triple(self.triple)
+            target_machine = target.create_target_machine()
+            
+            # Converter o tipo llvmlite para o tipo interno do LLVM
+            # Isso é necessário porque get_abi_size espera um tipo interno
+            llvm_type = struct_type._get_llvm_type()
+            struct_size = target_machine.target_data.get_abi_size(llvm_type)
+            return struct_size
+        except Exception as e:
+            # Fallback: cálculo manual mais robusto
+            return self._calculate_struct_size_manual(struct_type)
+    
+    def _calculate_struct_size_manual(self, struct_type: ir.LiteralStructType) -> int:
+        """Cálculo manual do tamanho do struct com alinhamento correto"""
+        total_size = 0
+        max_alignment = 1
+        
+        for field_type in struct_type.elements:
+            # Calcular tamanho e alinhamento do campo
+            if isinstance(field_type, ir.IntType):
+                if field_type.width == 1:  # bool
+                    field_size = 1
+                    field_alignment = 1
+                elif field_type.width <= 8:  # i8, i16, i32
+                    field_size = field_type.width // 8
+                    field_alignment = field_size
+                else:  # i64 e maiores
+                    field_size = 8
+                    field_alignment = 8
+            elif isinstance(field_type, ir.DoubleType):  # float/double
+                field_size = 8
+                field_alignment = 8
+            elif isinstance(field_type, ir.PointerType):  # string/pointer
+                field_size = 8
+                field_alignment = 8
+            elif isinstance(field_type, ir.LiteralStructType):  # struct aninhado
+                field_size = self._calculate_struct_size_manual(field_type)
+                field_alignment = 8  # Structs são alinhados em 8 bytes
+            else:
+                # Para tipos desconhecidos, assumir 8 bytes
+                field_size = 8
+                field_alignment = 8
+            
+            # Aplicar alinhamento do campo
+            padding = (field_alignment - (total_size % field_alignment)) % field_alignment
+            total_size += padding + field_size
+            max_alignment = max(max_alignment, field_alignment)
+        
+        # Alinhamento final do struct
+        final_padding = (max_alignment - (total_size % max_alignment)) % max_alignment
+        return total_size + final_padding
+
     def _generate_struct_constructor(self, node: StructConstructorNode, expected_type: ir.Type = None) -> ir.Value:
         struct_name = node.struct_name
         if struct_name not in self.struct_types:
             raise NameError(f"Struct '{struct_name}' não definido")
         struct_type = self.struct_types[struct_name]
-        struct_size = 24  # Tamanho fixo para TreeNode
+        
+        # Calcular o tamanho correto do struct
+        struct_size = self._calculate_struct_size(struct_type)
+        
         size = self.builder.call(self.malloc, [ir.Constant(ir.IntType(64), struct_size)])
         self._track_allocation(size)
         struct_ptr = self.builder.bitcast(size, struct_type.as_pointer())
@@ -3595,19 +3680,18 @@ class LLVMCodeGenerator:
                     if arg_value.type != llvm_field_type:
                         arg_value = self.builder.bitcast(arg_value, llvm_field_type)
                 elif isinstance(arg_value.type, ir.LiteralStructType) and isinstance(llvm_field_type, ir.PointerType):
-                    # Se o valor é um struct e o campo espera um ponteiro, fazer cast
-                    arg_value = self.builder.bitcast(arg_value, llvm_field_type)
+                    # Se o valor é um struct e o campo espera um ponteiro, não fazer cast
+                    # O struct já é o tipo correto
+                    pass
                 elif isinstance(arg_value.type, ir.PointerType) and isinstance(llvm_field_type, ir.LiteralStructType):
-                    # Se o valor é um ponteiro e o campo espera um struct, fazer cast
-                    arg_value = self.builder.bitcast(arg_value, llvm_field_type.as_pointer())
+                    # Se o valor é um ponteiro e o campo espera um struct, não fazer cast
+                    # O ponteiro já é o tipo correto
+                    pass
                 
                 # Verificar se os tipos são compatíveis antes de armazenar
                 if arg_value.type != field_ptr.type.pointee:
-                    try:
-                        arg_value = self.builder.bitcast(arg_value, field_ptr.type.pointee)
-                    except:
-                        # Se não conseguir fazer cast, usar valor nulo
-                        arg_value = ir.Constant(field_ptr.type.pointee, None)
+                    # Se os tipos não são compatíveis, usar valor nulo
+                    arg_value = ir.Constant(field_ptr.type.pointee, None)
                 
                 self.builder.store(arg_value, field_ptr)
         return struct_ptr
