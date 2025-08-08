@@ -2529,6 +2529,12 @@ class LLVMCodeGenerator:
                 element_ptr_type = ir.PointerType(arg.type.element)
                 array_ptr = self.builder.bitcast(arg, element_ptr_type)
                 converted_args.append(array_ptr)
+            # Se o argumento já é um ponteiro para elemento (como arrays locais após GEP)
+            elif (isinstance(arg.type, ir.PointerType) and
+                  isinstance(param_type.type, ir.PointerType) and
+                  arg.type.pointee == param_type.type.pointee):
+                # Já é o tipo correto, usar diretamente
+                converted_args.append(arg)
             else:
                 converted_args.append(arg)
         return converted_args
