@@ -2080,6 +2080,13 @@ class LLVMCodeGenerator:
         self.builder.store(value, elem_ptr)
     
     def _generate_print(self, node: PrintNode):
+        # Verificar se estamos imprimindo uma concatenação
+        if isinstance(node.expression, ConcatNode):
+            # Para concatenações, gerar o código e imprimir como string
+            value = self._generate_expression(node.expression)
+            self._print_string(value)
+            return
+        
         value = self._generate_expression(node.expression)
         
         # Verificar se estamos imprimindo um array diretamente
@@ -2106,7 +2113,7 @@ class LLVMCodeGenerator:
             # Verificar se o campo é um array
             if (struct_type_name and struct_type_name in self.struct_fields and 
                 field_name in self.struct_fields[struct_type_name]):
-                # Obter o tipo do campo
+                # Obter o índice do campo
                 field_index = self.struct_fields[struct_type_name][field_name]
                 if struct_type_name in self.struct_types:
                     struct_type = self.struct_types[struct_type_name]
@@ -2220,7 +2227,7 @@ class LLVMCodeGenerator:
             # Se é uma string, imprimir como string
             if isinstance(original_field_type, StringType) or isinstance(original_field_type, StrType):
                 # Acessar o campo usando getelementptr
-                field_ptr = self.builder.gep(struct_ptr, [ir.Constant(ir.IntType(32), 0), ir.Constant(ir.IntType(32), field_index)])
+                field_ptr = self.builder.gep(struct_ptr, [ir.Constant(self.int_type, 0), ir.Constant(self.int_type, field_index)])
                 
                 # Carregar o ponteiro da string
                 string_ptr = self.builder.load(field_ptr)
@@ -2233,7 +2240,7 @@ class LLVMCodeGenerator:
         field_index = self.struct_fields[struct_type_name][field_name]
         
         # Acessar o campo usando getelementptr
-        field_ptr = self.builder.gep(struct_ptr, [ir.Constant(ir.IntType(32), 0), ir.Constant(ir.IntType(32), field_index)])
+        field_ptr = self.builder.gep(struct_ptr, [ir.Constant(self.int_type, 0), ir.Constant(self.int_type, field_index)])
         
         # Carregar o ponteiro do array
         array_ptr = self.builder.load(field_ptr)
@@ -2243,6 +2250,9 @@ class LLVMCodeGenerator:
     
     def _print_string(self, string_ptr: ir.Value):
         """Imprime uma string"""
+        # Debug: log quando esta função é chamada
+        print(f"DEBUG: _print_string chamada com string_ptr: {string_ptr}")
+        
         # Formato para string
         fmt_str = "%s\n\0"
         fmt_bytes = fmt_str.encode('utf8')
@@ -2252,7 +2262,7 @@ class LLVMCodeGenerator:
         fmt_global.linkage = 'internal'
         fmt_global.global_constant = True
         fmt_global.initializer = ir.Constant(fmt_type, bytearray(fmt_bytes))
-        fmt_ptr = self.builder.gep(fmt_global, [ir.Constant(ir.IntType(32), 0), ir.Constant(ir.IntType(32), 0)], inbounds=True)
+        fmt_ptr = self.builder.gep(fmt_global, [ir.Constant(self.int_type, 0), ir.Constant(self.int_type, 0)], inbounds=True)
         
         # Imprimir a string
         self.builder.call(self.printf, [fmt_ptr, string_ptr])
@@ -2273,7 +2283,7 @@ class LLVMCodeGenerator:
         else:
             return
         
-        zero = ir.Constant(ir.IntType(32), 0)
+        zero = ir.Constant(self.int_type, 0)
 
         # String "["
         bracket_open_str = "[\0"
@@ -2339,7 +2349,7 @@ class LLVMCodeGenerator:
         for i in range(array_size):
             if i > 0:
                 self.builder.call(self.printf, [fmt_s_ptr, comma_ptr])
-            elem_ptr = self.builder.gep(array_ptr, [ir.Constant(ir.IntType(32), i)], inbounds=True)
+            elem_ptr = self.builder.gep(array_ptr, [ir.Constant(self.int_type, i)], inbounds=True)
             elem_value = self.builder.load(elem_ptr)
             
             # Tratamento especial para booleanos
@@ -2651,6 +2661,10 @@ class LLVMCodeGenerator:
                     # Obter o índice do campo
                     field_index = self.struct_fields[current_struct_type][field_name]
                     
+                    # Verificar se current_ptr é um ponteiro válido
+                    if not isinstance(current_ptr.type, ir.PointerType):
+                        raise TypeError(f"Tentativa de acessar campo '{field_name}' em valor que não é um ponteiro: {current_ptr.type}")
+                    
                     # Acessar o campo
                     field_ptr = self.builder.gep(current_ptr, [ir.Constant(ir.IntType(32), 0), ir.Constant(ir.IntType(32), field_index)])
                     
@@ -2666,11 +2680,32 @@ class LLVMCodeGenerator:
                             elif isinstance(field_type, ReferenceType) and isinstance(field_type.target_type, StructType):
                                 # É uma referência para um struct
                                 current_struct_type = field_type.target_type.name
+                                # Para referências, precisamos carregar o valor e fazer cast para o tipo correto
+                                if field_type.target_type.name in self.struct_types:
+                                    target_struct_type = self.struct_types[field_type.target_type.name]
+                                    loaded_value = self.builder.load(field_ptr)
+                                    current_ptr = self.builder.bitcast(loaded_value, target_struct_type.as_pointer())
+                                else:
+                                    raise NameError(f"Tipo de struct '{field_type.target_type.name}' não encontrado")
                             else:
                                 raise NameError(f"Campo '{field_name}' não é um struct ou referência para struct")
                         else:
-                            # Fallback: usar o nome do campo como tipo
-                            current_struct_type = field_name
+                            # Fallback: tentar inferir o tipo do campo
+                            # Se o campo é uma referência para um struct, usar o nome do struct
+                            if (hasattr(self, 'struct_field_types') and 
+                                current_struct_type in self.struct_field_types and 
+                                field_name in self.struct_field_types[current_struct_type]):
+                                field_type = self.struct_field_types[current_struct_type][field_name]
+                                if isinstance(field_type, ReferenceType) and isinstance(field_type.target_type, StructType):
+                                    current_struct_type = field_type.target_type.name
+                                elif isinstance(field_type, StructType):
+                                    current_struct_type = field_type.name
+                                else:
+                                    # Se não conseguir determinar, usar o nome do campo como último recurso
+                                    current_struct_type = field_name
+                            else:
+                                # Se não conseguir determinar, usar o nome do campo como último recurso
+                                current_struct_type = field_name
                     else:
                         # Último campo, retornar o valor
                         return self.builder.load(field_ptr)
@@ -2681,6 +2716,10 @@ class LLVMCodeGenerator:
                 
                 # Obter o índice do campo
                 field_index = self.struct_fields[struct_type_name][node.field_name]
+                
+                # Verificar se struct_ptr é um ponteiro válido
+                if not isinstance(struct_ptr.type, ir.PointerType):
+                    raise TypeError(f"Tentativa de acessar campo '{node.field_name}' em valor que não é um ponteiro: {struct_ptr.type}")
                 
                 # Acessar o campo usando getelementptr diretamente no ponteiro
                 field_ptr = self.builder.gep(struct_ptr, [ir.Constant(ir.IntType(32), 0), ir.Constant(ir.IntType(32), field_index)])
@@ -2701,7 +2740,35 @@ class LLVMCodeGenerator:
                             return field_value
                 
                 # Para outros tipos, carregar o valor do campo
-                return self.builder.load(field_ptr)
+                field_value = self.builder.load(field_ptr)
+                
+                # Verificar se o tipo do campo foi definido e fazer cast se necessário
+                if (hasattr(self, 'struct_field_types') and 
+                    struct_type_name in self.struct_field_types and 
+                    node.field_name in self.struct_field_types[struct_type_name]):
+                    field_type = self.struct_field_types[struct_type_name][node.field_name]
+                    expected_llvm_type = self._convert_type(field_type)
+                    
+                    # Se o tipo carregado não corresponde ao tipo esperado, fazer cast
+                    if field_value.type != expected_llvm_type:
+                        if hasattr(field_value.type, 'width') and hasattr(expected_llvm_type, 'width'):
+                            if field_value.type.width < expected_llvm_type.width:
+                                # Extensão de sinal para tipos menores
+                                if field_value.type.width == 8 and expected_llvm_type.width == 64:
+                                    field_value = self.builder.sext(field_value, expected_llvm_type)
+                                else:
+                                    field_value = self.builder.bitcast(field_value, expected_llvm_type)
+                            elif field_value.type.width > expected_llvm_type.width:
+                                # Truncamento para tipos maiores
+                                field_value = self.builder.trunc(field_value, expected_llvm_type)
+                            else:
+                                # Mesmo tamanho mas tipos diferentes, fazer bitcast
+                                field_value = self.builder.bitcast(field_value, expected_llvm_type)
+                        else:
+                            # Para tipos sem width (como ponteiros), usar bitcast
+                            field_value = self.builder.bitcast(field_value, expected_llvm_type)
+                
+                return field_value
         elif isinstance(node, ArrayNode):
             # Alocar memória para o array
             num_elements = len(node.elements)
@@ -2758,7 +2825,7 @@ class LLVMCodeGenerator:
 
             # Se o array foi alocado localmente (com alloca), retornar ponteiro para o primeiro elemento
             if hasattr(node, 'is_local') and node.is_local:
-                zero = ir.Constant(ir.IntType(32), 0)
+                zero = ir.Constant(self.int_type, 0)
                 return self.builder.gep(typed_ptr, [zero, zero], inbounds=True)
             return typed_ptr
             
@@ -3056,6 +3123,22 @@ class LLVMCodeGenerator:
                 args = []
                 for arg_node in node.arguments:
                     arg_value = self._generate_expression(arg_node)
+                    
+                    # Verificar se o argumento precisa de cast para o tipo esperado pela função
+                    if func == self.to_str_int and arg_value.type != self.int_type:
+                        if hasattr(arg_value.type, 'width') and arg_value.type.width == 8:
+                            # Converter de i8 para i64
+                            arg_value = self.builder.sext(arg_value, self.int_type)
+                        elif arg_value.type != self.int_type:
+                            # Para outros tipos, fazer bitcast
+                            arg_value = self.builder.bitcast(arg_value, self.int_type)
+                    elif func == self.to_str_float and arg_value.type != self.float_type:
+                        # Converter para float se necessário
+                        if arg_value.type == self.int_type:
+                            arg_value = self.builder.sitofp(arg_value, self.float_type)
+                        else:
+                            arg_value = self.builder.bitcast(arg_value, self.float_type)
+                    
                     args.append(arg_value)
                 
                 return self.builder.call(func, args)
@@ -3180,10 +3263,15 @@ class LLVMCodeGenerator:
             
             # Operações aritméticas
             if node.operator == TokenType.PLUS:
-                # Verificar se é concatenação de strings
-                if (isinstance(left.type, ir.PointerType) and left.type.pointee == self.char_type and
-                    isinstance(right.type, ir.PointerType) and right.type.pointee == self.char_type):
-                    # Concatenação de strings
+                # Verificar se é concatenação de strings (pelo menos um lado é string)
+                left_is_string = (isinstance(left.type, ir.PointerType) and left.type.pointee == self.char_type) or left.type == self.string_type
+                right_is_string = (isinstance(right.type, ir.PointerType) and right.type.pointee == self.char_type) or right.type == self.string_type
+                
+                if left_is_string or right_is_string:
+                    # Concatenação de strings - ambos os lados devem ser strings
+                    if not left_is_string or not right_is_string:
+                        raise TypeError("Operação + para strings requer que ambos os operandos sejam strings. Use to_str() para converter números para string.")
+                    
                     # Calcular tamanho necessário
                     len1 = self.builder.call(self.strlen, [left])
                     len2 = self.builder.call(self.strlen, [right])
@@ -3375,7 +3463,10 @@ class LLVMCodeGenerator:
         if hasattr(self, 'struct_field_types') and struct_type_name in self.struct_field_types:
             field_type = self.struct_field_types[struct_type_name][node.field_name]
         
-        # Acessar o campo
+        # Acessar o campo - garantir que struct_ptr seja um ponteiro válido
+        if not isinstance(struct_ptr.type, ir.PointerType):
+            raise TypeError(f"Esperado ponteiro para struct, recebido: {struct_ptr.type}")
+        
         field_ptr = self.builder.gep(struct_ptr, [
             ir.Constant(ir.IntType(32), 0),
             ir.Constant(ir.IntType(32), field_index)
@@ -3415,6 +3506,9 @@ class LLVMCodeGenerator:
                   isinstance(self.type_map[node.struct_name], ReferenceType)):
                 # É uma referência, precisa dereferenciar
                 struct_ptr = self.builder.load(struct_ptr)
+            else:
+                # É uma variável local que é um ponteiro para struct, precisa dereferenciar
+                struct_ptr = self.builder.load(struct_ptr)
         else:
             # Procurar nas variáveis globais
             struct_ptr = self.module.globals.get(node.struct_name)
@@ -3450,7 +3544,10 @@ class LLVMCodeGenerator:
             # Obter o índice do campo
             field_index = self.struct_fields[current_struct_type][field_name]
             
-            # Acessar o campo
+            # Acessar o campo - garantir que current_ptr seja um ponteiro válido
+            if not isinstance(current_ptr.type, ir.PointerType):
+                raise TypeError(f"Esperado ponteiro para struct, recebido: {current_ptr.type}")
+            
             field_ptr = self.builder.gep(current_ptr, [
                 ir.Constant(ir.IntType(32), 0),
                 ir.Constant(ir.IntType(32), field_index)
@@ -3474,37 +3571,64 @@ class LLVMCodeGenerator:
                             is_null = self.builder.icmp_signed('==', field_value, null_ptr)
                             
                             # Se é null, criar um novo struct
-                            with self.builder.if_then(is_null):
-                                # Calcular tamanho do struct baseado nos campos
-                                struct_size = 0
-                                for field_type in field_struct_type.elements:
-                                    if isinstance(field_type, ir.IntType):
-                                        if field_type.width == 1:  # bool
-                                            struct_size += 1
-                                        elif field_type.width == 64:  # int
-                                            struct_size += 8
-                                    elif isinstance(field_type, ir.DoubleType):  # float
+                            # Criar blocos para if/else
+                            then_block = self.builder.function.append_basic_block('then')
+                            else_block = self.builder.function.append_basic_block('else')
+                            merge_block = self.builder.function.append_basic_block('merge')
+                            
+                            # Branch baseado na condição
+                            self.builder.cbranch(is_null, then_block, else_block)
+                            
+                            # Bloco then: criar novo struct
+                            self.builder.position_at_end(then_block)
+                            # Calcular tamanho do struct baseado nos campos
+                            struct_size = 0
+                            for llvm_field_type in field_struct_type.elements:
+                                if isinstance(llvm_field_type, ir.IntType):
+                                    if llvm_field_type.width == 1:  # bool
+                                        struct_size += 1
+                                    elif llvm_field_type.width == 64:  # int
                                         struct_size += 8
-                                    elif isinstance(field_type, ir.PointerType):  # string/pointer
-                                        struct_size += 8
-                                
-                                # Alinhar para 8 bytes (padrão x86_64)
-                                struct_size = (struct_size + 7) & ~7
-                                size_val = ir.Constant(ir.IntType(64), struct_size)
-                                new_struct_ptr = self.builder.call(self.malloc, [size_val])
-                                self._track_allocation(new_struct_ptr)
-                                
-                                # Fazer cast para o tipo correto
-                                new_struct_ptr = self.builder.bitcast(new_struct_ptr, field_struct_type.as_pointer())
-                                
-                                # Armazenar o novo struct no campo
-                                self.builder.store(new_struct_ptr, field_ptr)
-                                
-                                # Usar o novo struct para continuar navegando
-                                current_ptr = new_struct_ptr
-                            with self.builder.if_else():
-                                # Se não é null, fazer cast e continuar
-                                current_ptr = self.builder.bitcast(field_value, field_struct_type.as_pointer())
+                                elif isinstance(llvm_field_type, ir.DoubleType):  # float
+                                    struct_size += 8
+                                elif isinstance(llvm_field_type, ir.PointerType):  # string/pointer
+                                    struct_size += 8
+                            
+                            # Alinhar para 8 bytes (padrão x86_64)
+                            struct_size = (struct_size + 7) & ~7
+                            size_val = ir.Constant(ir.IntType(64), struct_size)
+                            new_struct_ptr = self.builder.call(self.malloc, [size_val])
+                            self._track_allocation(new_struct_ptr)
+                            
+                            # Fazer cast para o tipo correto
+                            new_struct_ptr = self.builder.bitcast(new_struct_ptr, field_struct_type.as_pointer())
+                            
+                            # Armazenar o novo struct no campo
+                            self.builder.store(new_struct_ptr, field_ptr)
+                            
+                            # Usar o novo struct para continuar navegando
+                            current_ptr = new_struct_ptr
+                            
+                            # Branch para o bloco de merge
+                            self.builder.branch(merge_block)
+                            
+                            # Bloco else: usar struct existente
+                            self.builder.position_at_end(else_block)
+                            # Se não é null, fazer cast e continuar
+                            current_ptr = self.builder.bitcast(field_value, field_struct_type.as_pointer())
+                            
+                            # Branch para o bloco de merge
+                            self.builder.branch(merge_block)
+                            
+                            # Bloco de merge: continuar com o ponteiro correto
+                            self.builder.position_at_end(merge_block)
+                            
+                            # Definir current_ptr baseado no bloco de onde veio
+                            # Usar phi node para selecionar o valor correto
+                            phi_current_ptr = self.builder.phi(field_struct_type.as_pointer())
+                            phi_current_ptr.add_incoming(new_struct_ptr, then_block)
+                            phi_current_ptr.add_incoming(current_ptr, else_block)
+                            current_ptr = phi_current_ptr
                             
                             current_struct_type = field_type.name
                         else:
@@ -3520,38 +3644,66 @@ class LLVMCodeGenerator:
                             null_ptr = ir.Constant(field_ptr.type.pointee, None)
                             is_null = self.builder.icmp_signed('==', field_value, null_ptr)
                             
-                            # Se é null, criar um novo struct
-                            with self.builder.if_then(is_null):
-                                # Calcular tamanho do struct baseado nos campos
-                                struct_size = 0
-                                for field_type in field_struct_type.elements:
-                                    if isinstance(field_type, ir.IntType):
-                                        if field_type.width == 1:  # bool
-                                            struct_size += 1
-                                        elif field_type.width == 64:  # int
-                                            struct_size += 8
-                                    elif isinstance(field_type, ir.DoubleType):  # float
+                            # Criar blocos para if/else
+                            then_block = self.builder.function.append_basic_block('then')
+                            else_block = self.builder.function.append_basic_block('else')
+                            merge_block = self.builder.function.append_basic_block('merge')
+                            
+                            # Branch baseado na condição
+                            self.builder.cbranch(is_null, then_block, else_block)
+                            
+                            # Bloco then: criar novo struct
+                            self.builder.position_at_end(then_block)
+                            # Calcular tamanho do struct baseado nos campos
+                            struct_size = 0
+                            for llvm_field_type in field_struct_type.elements:
+                                if isinstance(llvm_field_type, ir.IntType):
+                                    if llvm_field_type.width == 1:  # bool
+                                        struct_size += 1
+                                    elif llvm_field_type.width == 64:  # int
                                         struct_size += 8
-                                    elif isinstance(field_type, ir.PointerType):  # string/pointer
-                                        struct_size += 8
-                                
-                                # Alinhar para 8 bytes (padrão x86_64)
-                                struct_size = (struct_size + 7) & ~7
-                                size_val = ir.Constant(ir.IntType(64), struct_size)
-                                new_struct_ptr = self.builder.call(self.malloc, [size_val])
-                                self._track_allocation(new_struct_ptr)
-                                
-                                # Fazer cast para o tipo correto
-                                new_struct_ptr = self.builder.bitcast(new_struct_ptr, field_struct_type.as_pointer())
-                                
-                                # Armazenar o novo struct no campo
-                                self.builder.store(new_struct_ptr, field_ptr)
-                                
-                                # Usar o novo struct para continuar navegando
-                                current_ptr = new_struct_ptr
-                            with self.builder.if_else():
-                                # Se não é null, fazer cast e continuar
-                                current_ptr = self.builder.bitcast(field_value, field_struct_type.as_pointer())
+                                elif isinstance(llvm_field_type, ir.DoubleType):  # float
+                                    struct_size += 8
+                                elif isinstance(llvm_field_type, ir.PointerType):  # string/pointer
+                                    struct_size += 8
+                            
+                            # Alinhar para 8 bytes (padrão x86_64)
+                            struct_size = (struct_size + 7) & ~7
+                            size_val = ir.Constant(ir.IntType(64), struct_size)
+                            new_struct_ptr = self.builder.call(self.malloc, [size_val])
+                            self._track_allocation(new_struct_ptr)
+                            
+                            # Fazer cast para o tipo correto
+                            new_struct_ptr = self.builder.bitcast(new_struct_ptr, field_struct_type.as_pointer())
+                            
+                            # Armazenar o novo struct no campo
+                            # Fazer cast para i8* antes de armazenar
+                            new_struct_ptr_as_i8 = self.builder.bitcast(new_struct_ptr, ir.IntType(8).as_pointer())
+                            self.builder.store(new_struct_ptr_as_i8, field_ptr)
+                            
+                            # Usar o novo struct para continuar navegando
+                            current_ptr = new_struct_ptr
+                            
+                            # Branch para o bloco de merge
+                            self.builder.branch(merge_block)
+                            
+                            # Bloco else: usar struct existente
+                            self.builder.position_at_end(else_block)
+                            # Se não é null, fazer cast e continuar
+                            current_ptr = self.builder.bitcast(field_value, field_struct_type.as_pointer())
+                            
+                            # Branch para o bloco de merge
+                            self.builder.branch(merge_block)
+                            
+                            # Bloco de merge: continuar com o ponteiro correto
+                            self.builder.position_at_end(merge_block)
+                            
+                            # Definir current_ptr baseado no bloco de onde veio
+                            # Usar phi node para selecionar o valor correto
+                            phi_current_ptr = self.builder.phi(field_struct_type.as_pointer())
+                            phi_current_ptr.add_incoming(new_struct_ptr, then_block)
+                            phi_current_ptr.add_incoming(current_ptr, else_block)
+                            current_ptr = phi_current_ptr
                             
                             current_struct_type = field_type.target_type.name
                         else:
@@ -3586,6 +3738,18 @@ class LLVMCodeGenerator:
                         # Se ambos são ponteiros, fazer cast se necessário
                         if value.type != field_ptr.type.pointee:
                             value = self.builder.bitcast(value, field_ptr.type.pointee)
+                else:
+                    # Para campos que não são referências, verificar se precisamos fazer cast
+                    if hasattr(value, 'type') and hasattr(field_ptr, 'type'):
+                        if value.type != field_ptr.type.pointee:
+                            # Tentar fazer cast se os tipos forem compatíveis
+                            try:
+                                value = self.builder.bitcast(value, field_ptr.type.pointee)
+                            except:
+                                # Se o cast falhar, tentar converter o valor para o tipo esperado
+                                if isinstance(field_ptr.type.pointee, ir.PointerType):
+                                    # Se o campo espera um ponteiro, fazer cast
+                                    value = self.builder.bitcast(value, field_ptr.type.pointee)
                 
                 # Armazenar o valor
                 self.builder.store(value, field_ptr)
@@ -3669,6 +3833,10 @@ class LLVMCodeGenerator:
             if i < len(node.arguments):
                 llvm_field_type = self._convert_type(field_type)
                 arg_value = self._generate_expression(node.arguments[i], llvm_field_type)
+                # Garantir que struct_ptr seja um ponteiro válido
+                if not isinstance(struct_ptr.type, ir.PointerType):
+                    raise TypeError(f"Esperado ponteiro para struct, recebido: {struct_ptr.type}")
+                
                 field_ptr = self.builder.gep(struct_ptr, [
                     ir.Constant(ir.IntType(32), 0),
                     ir.Constant(ir.IntType(32), i)

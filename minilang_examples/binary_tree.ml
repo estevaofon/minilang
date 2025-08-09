@@ -6,16 +6,12 @@ end
 
 let visit: int[5] = [0, 0, 0, 0, 0]
 
+// Formato mais sofisticado (múltiplos níveis)
 let root: Node = Node(1, null, null)
-let left_child: Node = Node(2, null, null)
-let right_child: Node = Node(3, null, null)
-let left_left: Node = Node(4, null, null)
-let left_right: Node = Node(5, null, null)
-
-root.left = left_child
-root.right = right_child
-left_child.left = left_left
-left_child.right = left_right
+root.left = Node(2, null, null)
+root.right = Node(3, null, null)
+root.left.left = Node(4, null, null)
+root.left.right = Node(5, null, null)
 
 func pre_order(node: Node, index: int, array: int[]) -> int
   if node != null then
