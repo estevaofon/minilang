@@ -502,6 +502,11 @@ class BreakNode(ASTNode):
     """Nó para a keyword break"""
     pass
 
+@dataclass
+class StringCharAccessNode(ASTNode):
+    string: str
+    index: ASTNode
+
 # Parser
 class Parser:
     def __init__(self, tokens: List[Token]):
@@ -720,13 +725,13 @@ class Parser:
         if identifier.type != TokenType.IDENTIFIER:
             self._error("Esperado identificador após 'let' ou 'global'")
         
-        if not self._match(TokenType.COLON):
-            self._error("Esperado ':' após identificador")
-        
-        var_type = self._parse_type()
+        var_type = None
+        if self._match(TokenType.COLON):
+            # Tipo explícito fornecido
+            var_type = self._parse_type()
         
         if not self._match(TokenType.ASSIGN):
-            self._error("Esperado '=' após tipo")
+            self._error("Esperado '=' após tipo ou identificador")
             
         value = self._parse_expression()
         return AssignmentNode(identifier.value, var_type, value, is_global)
@@ -949,7 +954,12 @@ class Parser:
                 index = self._parse_expression()
                 if not self._match(TokenType.RBRACKET):
                     raise SyntaxError("Esperado ']' após índice")
-                if isinstance(expr, IdentifierNode):
+                
+                # Verificar se é acesso a string literal
+                if isinstance(expr, StringNode):
+                    # Criar um nó especial para acesso a caractere de string
+                    expr = StringCharAccessNode(expr.value, index)
+                elif isinstance(expr, IdentifierNode):
                     expr = ArrayAccessNode(expr.name, index)
                 elif isinstance(expr, StructAccessNode):
                     # Acesso a array de campo de struct: struct.campo[indice]
@@ -1282,9 +1292,13 @@ class LLVMCodeGenerator:
         to_float_ty = ir.FunctionType(self.float_type, [self.int_type])
         self.to_float = ir.Function(self.module, to_float_ty, name="to_float")
         
+        # char_to_str: converte caractere para string
+        char_to_str_ty = ir.FunctionType(self.string_type, [self.char_type])
+        self.char_to_str = ir.Function(self.module, char_to_str_ty, name="char_to_str")
+        
         if sys.platform == "win32":
             # Adicionar atributos para linking correto no Windows
-            for func in [self.printf, self.malloc, self.free, self.strlen, self.strcpy, self.strcat, self.sprintf, self.to_str_int, self.to_str_float, self.array_to_str_int, self.array_to_str_float, self.to_int, self.to_float]:
+            for func in [self.printf, self.malloc, self.free, self.strlen, self.strcpy, self.strcat, self.sprintf, self.to_str_int, self.to_str_float, self.array_to_str_int, self.array_to_str_float, self.to_int, self.to_float, self.char_to_str]:
                 if func:
                     func.calling_convention = 'ccc'
                     func.linkage = 'external'
@@ -1300,13 +1314,13 @@ class LLVMCodeGenerator:
                 self.setconsolecp.linkage = 'external'
         else:
             # Adicionar atributos para outras plataformas
-            for func in [self.printf, self.malloc, self.free, self.strlen, self.strcpy, self.strcat, self.sprintf, self.to_str_int, self.to_str_float, self.array_to_str_int, self.array_to_str_float, self.to_int, self.to_float]:
+            for func in [self.printf, self.malloc, self.free, self.strlen, self.strcpy, self.strcat, self.sprintf, self.to_str_int, self.to_str_float, self.array_to_str_int, self.array_to_str_float, self.to_int, self.to_float, self.char_to_str]:
                 func.calling_convention = 'ccc'
                 func.linkage = 'external'
         
         if sys.platform == "win32":
             # Adicionar atributos para linking correto no Windows
-            for func in [self.printf, self.malloc, self.free, self.strlen, self.strcpy, self.to_str_int, self.to_str_float, self.array_to_str_int, self.array_to_str_float, self.to_int, self.to_float]:
+            for func in [self.printf, self.malloc, self.free, self.strlen, self.strcpy, self.to_str_int, self.to_str_float, self.array_to_str_int, self.array_to_str_float, self.to_int, self.to_float, self.char_to_str]:
                 if func:
                     func.calling_convention = 'ccc'
                     func.linkage = 'external'
@@ -1340,6 +1354,7 @@ class LLVMCodeGenerator:
         self.functions['array_to_str'] = self.array_to_str_int  # Usar versão int como padrão
         self.functions['to_int'] = self.to_int
         self.functions['to_float'] = self.to_float
+        self.functions['char_to_str'] = self.char_to_str
         
         # Função de impressão
         self.functions['printf'] = self.printf
@@ -1976,6 +1991,8 @@ class LLVMCodeGenerator:
                 alloca = self.builder.alloca(var_type, name=node.identifier)
                 self.local_vars[node.identifier] = alloca
                 self.type_map[node.identifier] = node.var_type
+                
+
                 
                 # Armazenar valor
                 if isinstance(node.var_type, ArrayType):
@@ -3169,16 +3186,20 @@ class LLVMCodeGenerator:
                         if isinstance(array_ptr.type, ir.ArrayType):
                             zero = ir.Constant(ir.IntType(32), 0)
                             array_ptr = self.builder.gep(array_ptr, [zero, zero], inbounds=True)
-            # Se for string (i8*), acessar como caractere (cast de segurança)
+            # Se for string (i8*), acessar como caractere e converter para string
             if (isinstance(array_ptr.type, ir.PointerType) and array_ptr.type.pointee == self.char_type) or (
-                hasattr(node, 'element_type') and isinstance(node.element_type, StringType)):
+                hasattr(node, 'element_type') and isinstance(node.element_type, StringType)) or (
+                node.array_name in self.type_map and isinstance(self.type_map[node.array_name], StringType)):
                 if not (isinstance(array_ptr.type, ir.PointerType) and array_ptr.type.pointee == self.char_type):
                     array_ptr = self.builder.bitcast(array_ptr, self.char_type.as_pointer())
                 # Converter índice para i32 para compatibilidade com ponteiros i8*
                 if index.type != ir.IntType(32):
                     index = self.builder.sext(index, ir.IntType(32)) if index.type.width < 32 else self.builder.trunc(index, ir.IntType(32))
                 elem_ptr = self.builder.gep(array_ptr, [index], inbounds=True)
-                return self.builder.load(elem_ptr)
+                char_value = self.builder.load(elem_ptr)
+                # Converter caractere para string usando char_to_str
+                char_str = self.builder.call(self.char_to_str, [char_value])
+                return char_str
             # Caso contrário, array normal
             # Se for um array local (alocado com alloca), usar GEP [0, index]
             if isinstance(array_ptr.type, ir.ArrayType):
@@ -3590,6 +3611,45 @@ class LLVMCodeGenerator:
         
         elif isinstance(node, StructConstructorNode):
             return self._generate_struct_constructor(node, expected_type)
+        
+        elif isinstance(node, StringCharAccessNode):
+            # Acesso a caractere de string literal: "hello"[1]
+            # Gerar o índice
+            index = self._generate_expression(node.index)
+            
+            # Verificar se o índice está dentro dos limites da string
+            string_length = len(node.string)
+            
+            # Verificar se o índice está dentro dos limites
+            if (hasattr(index, 'constant') and 
+                isinstance(index.constant, int) and 
+                0 <= index.constant < string_length):
+                # Índice constante e válido
+                char_value = ord(node.string[index.constant])
+                char_str = self.builder.call(self.char_to_str, [ir.Constant(self.char_type, char_value)])
+                return char_str
+            else:
+                # Índice dinâmico - usar string literal diretamente
+                # Para strings literais, podemos acessar diretamente o caractere
+                # e converter para string usando char_to_str
+                
+                # Criar um array temporário com os caracteres da string
+                char_array = [ord(c) for c in node.string]
+                char_array_type = ir.ArrayType(self.char_type, string_length)
+                char_array_constant = ir.Constant(char_array_type, char_array)
+                
+                # Obter o ponteiro para o caractere no índice
+                char_ptr = self.builder.gep(char_array_constant, [
+                    ir.Constant(ir.IntType(32), 0),
+                    index
+                ])
+                
+                # Carregar o caractere
+                char_value = self.builder.load(char_ptr)
+                
+                # Chamar char_to_str para converter o caractere para string
+                char_str = self.builder.call(self.char_to_str, [char_value])
+                return char_str
         
         raise NotImplementedError(f"Tipo de nó não implementado: {type(node)}")
 

@@ -119,4 +119,16 @@ long long to_int(double value) {
 // Função para converter int para float
 double to_float(long long value) {
     return (double)value;
+}
+
+// Função para converter caractere para string
+char* char_to_str(char c) {
+    // Alocar espaço para o caractere + null terminator
+    char* buffer = malloc(2);
+    if (buffer == NULL) {
+        return NULL;
+    }
+    buffer[0] = c;
+    buffer[1] = '\0';
+    return buffer;
 } 
