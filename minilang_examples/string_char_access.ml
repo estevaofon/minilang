@@ -35,5 +35,4 @@ while i < strlen(texto) do
     print(texto[i])
     i = i + 1
 end
-
 print(first_three_chars[1])
