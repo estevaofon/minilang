@@ -1324,6 +1324,25 @@ class LLVMCodeGenerator:
         # fmod para float módulo
         fmod_ty = ir.FunctionType(self.float_type, [self.float_type, self.float_type])
         self.fmod = ir.Function(self.module, fmod_ty, name="fmod")
+        
+        # Adicionar funções built-in ao dicionário de funções para que sejam reconhecidas
+        # Funções de string
+        self.functions['strlen'] = self.strlen
+        self.functions['strcpy'] = self.strcpy
+        self.functions['strcat'] = self.strcat
+        
+        # Funções de memória
+        self.functions['malloc'] = self.malloc
+        self.functions['free'] = self.free
+        
+        # Funções de casting
+        self.functions['to_str'] = self.to_str_int  # Usar versão int como padrão
+        self.functions['array_to_str'] = self.array_to_str_int  # Usar versão int como padrão
+        self.functions['to_int'] = self.to_int
+        self.functions['to_float'] = self.to_float
+        
+        # Função de impressão
+        self.functions['printf'] = self.printf
     
     def _convert_type(self, ml_type: Type) -> ir.Type:
         if isinstance(ml_type, IntType):
