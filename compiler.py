@@ -2029,6 +2029,79 @@ class LLVMCodeGenerator:
                     self.builder.store(value, alloca)
     
     def _generate_array_assignment(self, node: ArrayAssignmentNode):
+        # Verificar se é um acesso a campo de struct (ex: arr.elementos[i])
+        if '.' in node.array_name:
+            # Dividir o nome: "arr.elementos" -> ["arr", "elementos"]
+            parts = node.array_name.split('.')
+            struct_name = parts[0]
+            field_name = parts[1]
+            
+            # Procurar a variável struct primeiro localmente, depois globalmente
+            if struct_name in self.local_vars:
+                struct_ptr = self.local_vars[struct_name]
+                # Verificar se é um parâmetro de função (ponteiro para ponteiro)
+                if isinstance(struct_ptr, ir.Argument):
+                    # É um parâmetro de função, precisa dereferenciar
+                    struct_ptr = self.builder.load(struct_ptr)
+                elif (struct_name in self.type_map and 
+                      isinstance(self.type_map[struct_name], ReferenceType)):
+                    # É uma referência, precisa dereferenciar
+                    struct_ptr = self.builder.load(struct_ptr)
+                # Se for um alloca (variável local), fazer load
+                import llvmlite.ir.instructions
+                if isinstance(struct_ptr, llvmlite.ir.instructions.AllocaInstr):
+                    struct_ptr = self.builder.load(struct_ptr)
+            elif struct_name in self.global_vars:
+                struct_ptr = self.global_vars[struct_name]
+            else:
+                raise NameError(f"Variável '{struct_name}' não encontrada")
+            
+            # Determinar o tipo de struct baseado na variável
+            struct_type_name = None
+            if struct_name in self.type_map:
+                var_type = self.type_map[struct_name]
+                if isinstance(var_type, StructType):
+                    struct_type_name = var_type.name
+                elif isinstance(var_type, ReferenceType) and isinstance(var_type.target_type, StructType):
+                    struct_type_name = var_type.target_type.name
+            
+            if not struct_type_name or struct_type_name not in self.struct_fields:
+                raise NameError(f"Não foi possível determinar o tipo da variável '{struct_name}'")
+            
+            # Verificar se o campo existe
+            if field_name not in self.struct_fields[struct_type_name]:
+                raise NameError(f"Campo '{field_name}' não encontrado em struct '{struct_type_name}'")
+            
+            # Fazer cast do ponteiro para o tipo correto do struct
+            if struct_type_name in self.struct_types:
+                struct_type = self.struct_types[struct_type_name]
+                struct_ptr = self.builder.bitcast(struct_ptr, struct_type.as_pointer())
+            
+            # Obter o índice do campo
+            field_index = self.struct_fields[struct_type_name][field_name]
+            
+            # Acessar o campo do struct
+            field_ptr = self.builder.gep(struct_ptr, [ir.Constant(ir.IntType(32), 0), ir.Constant(ir.IntType(32), field_index)])
+            
+            # O campo é um array, obter ponteiro para o primeiro elemento
+            if isinstance(field_ptr.type, ir.PointerType) and isinstance(field_ptr.type.pointee, ir.ArrayType):
+                zero = ir.Constant(ir.IntType(32), 0)
+                array_ptr = self.builder.gep(field_ptr, [zero, zero], inbounds=True)
+            else:
+                array_ptr = field_ptr
+            
+            # Continuar com a lógica normal de atribuição de array
+            index = self._generate_expression(node.index)
+            value = self._generate_expression(node.value)
+            
+            # Calcular endereço do elemento
+            elem_ptr = self.builder.gep(array_ptr, [index], inbounds=True)
+            
+            # Armazenar valor
+            self.builder.store(value, elem_ptr)
+            return
+        
+        # Caso normal: array simples
         # Procurar variável primeiro localmente, depois globalmente
         if node.array_name in self.local_vars:
             var = self.local_vars[node.array_name]
@@ -2953,6 +3026,96 @@ class LLVMCodeGenerator:
             return result
             
         elif isinstance(node, ArrayAccessNode):
+            # Verificar se é um acesso a campo de struct (ex: arr.elementos[i])
+            if '.' in node.array_name:
+                # Dividir o nome: "arr.elementos" -> ["arr", "elementos"]
+                parts = node.array_name.split('.')
+                struct_name = parts[0]
+                field_name = parts[1]
+                
+                # Procurar a variável struct primeiro localmente, depois globalmente
+                if struct_name in self.local_vars:
+                    struct_ptr = self.local_vars[struct_name]
+                    # Verificar se é um parâmetro de função (ponteiro para ponteiro)
+                    if isinstance(struct_ptr, ir.Argument):
+                        # É um parâmetro de função, precisa dereferenciar
+                        struct_ptr = self.builder.load(struct_ptr)
+                    elif (struct_name in self.type_map and 
+                          isinstance(self.type_map[struct_name], ReferenceType)):
+                        # É uma referência, precisa dereferenciar
+                        struct_ptr = self.builder.load(struct_ptr)
+                    # Se for um alloca (variável local), fazer load
+                    import llvmlite.ir.instructions
+                    if isinstance(struct_ptr, llvmlite.ir.instructions.AllocaInstr):
+                        struct_ptr = self.builder.load(struct_ptr)
+                elif struct_name in self.global_vars:
+                    struct_ptr = self.global_vars[struct_name]
+                else:
+                    raise NameError(f"Variável '{struct_name}' não encontrada")
+                
+                # Determinar o tipo de struct baseado na variável
+                struct_type_name = None
+                if struct_name in self.type_map:
+                    var_type = self.type_map[struct_name]
+                    if isinstance(var_type, StructType):
+                        struct_type_name = var_type.name
+                    elif isinstance(var_type, ReferenceType) and isinstance(var_type.target_type, StructType):
+                        struct_type_name = var_type.target_type.name
+                
+                if not struct_type_name or struct_type_name not in self.struct_fields:
+                    raise NameError(f"Não foi possível determinar o tipo da variável '{struct_name}'")
+                
+                # Verificar se o campo existe
+                if field_name not in self.struct_fields[struct_type_name]:
+                    raise NameError(f"Campo '{field_name}' não encontrado em struct '{struct_type_name}'")
+                
+                # Fazer cast do ponteiro para o tipo correto do struct
+                if struct_type_name in self.struct_types:
+                    struct_type = self.struct_types[struct_type_name]
+                    struct_ptr = self.builder.bitcast(struct_ptr, struct_type.as_pointer())
+                
+                # Obter o índice do campo
+                field_index = self.struct_fields[struct_type_name][field_name]
+                
+                # Acessar o campo do struct
+                field_ptr = self.builder.gep(struct_ptr, [ir.Constant(ir.IntType(32), 0), ir.Constant(ir.IntType(32), field_index)])
+                
+                # O campo é um array, obter ponteiro para o primeiro elemento
+                if isinstance(field_ptr.type, ir.PointerType) and isinstance(field_ptr.type.pointee, ir.ArrayType):
+                    zero = ir.Constant(ir.IntType(32), 0)
+                    array_ptr = self.builder.gep(field_ptr, [zero, zero], inbounds=True)
+                else:
+                    array_ptr = field_ptr
+                
+                # Continuar com a lógica normal de acesso a array
+                index = self._generate_expression(node.index)
+                
+                # Se for string (i8*), acessar como caractere (cast de segurança)
+                if (isinstance(array_ptr.type, ir.PointerType) and array_ptr.type.pointee == self.char_type) or (
+                    hasattr(node, 'element_type') and isinstance(node.element_type, StringType)):
+                    if not (isinstance(array_ptr.type, ir.PointerType) and array_ptr.type.pointee == self.char_type):
+                        array_ptr = self.builder.bitcast(array_ptr, self.char_type.as_pointer())
+                    # Converter índice para i32 para compatibilidade com ponteiros i8*
+                    if index.type != ir.IntType(32):
+                        index = self.builder.sext(index, ir.IntType(32)) if index.type.width < 32 else self.builder.trunc(index, ir.IntType(32))
+                    elem_ptr = self.builder.gep(array_ptr, [index], inbounds=True)
+                    return self.builder.load(elem_ptr)
+                
+                # Caso contrário, array normal
+                # Se for um array local (alocado com alloca), usar GEP [0, index]
+                if isinstance(array_ptr.type, ir.ArrayType):
+                    zero = ir.Constant(ir.IntType(32), 0)
+                    elem_ptr = self.builder.gep(array_ptr, [zero, index], inbounds=True)
+                    return self.builder.load(elem_ptr)
+                else:
+                    # Verificar se array_ptr é um ponteiro válido
+                    if not isinstance(array_ptr.type, ir.PointerType):
+                        # Se não é ponteiro, fazer cast para ponteiro
+                        array_ptr = self.builder.bitcast(array_ptr, self.int_type.as_pointer())
+                    elem_ptr = self.builder.gep(array_ptr, [index], inbounds=True)
+                    return self.builder.load(elem_ptr)
+            
+            # Caso normal: array simples
             # Procurar variável primeiro localmente, depois globalmente
             if node.array_name in self.local_vars:
                 var = self.local_vars[node.array_name]
@@ -3793,6 +3956,23 @@ class LLVMCodeGenerator:
             elif isinstance(field_type, ir.PointerType):  # string/pointer
                 field_size = 8
                 field_alignment = 8
+            elif isinstance(field_type, ir.ArrayType):  # Array dentro do struct
+                # Para arrays, calcular o tamanho total dos elementos
+                element_type = field_type.element
+                if isinstance(element_type, ir.IntType):
+                    if element_type.width <= 8:
+                        element_size = max(1, element_type.width // 8)
+                    else:
+                        element_size = 8
+                elif isinstance(element_type, ir.DoubleType):
+                    element_size = 8
+                elif isinstance(element_type, ir.PointerType):
+                    element_size = 8
+                else:
+                    element_size = 8  # Fallback
+                
+                field_size = element_size * field_type.count
+                field_alignment = 8  # Arrays são alinhados em 8 bytes
             elif isinstance(field_type, ir.LiteralStructType):  # struct aninhado
                 field_size = self._calculate_struct_size_manual(field_type)
                 field_alignment = 8  # Structs são alinhados em 8 bytes
