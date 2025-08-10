@@ -30,12 +30,19 @@ struct Node
   right: ref Node
 end
 
+print("Binary tree example:")
 // Formato mais sofisticado (múltiplos níveis)
 let root: Node = Node(1, null, null)
+print("Root created")
 root.left = Node(2, null, null)
+print("Left child created")
 root.right = Node(3, null, null)
+print("Right child created")
 root.left.left = Node(4, null, null)
+print("Left child of left child created")
 root.left.right = Node(5, null, null)
+print("Right child of left child created")
+print("Tree created")
 
 // Desenho da arvore binaria em ASCII
 //     1

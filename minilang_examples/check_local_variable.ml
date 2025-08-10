@@ -1,7 +1,9 @@
 let a: int = 10
 print(to_str(a))
+let c: int = 42
 
 func teste(a: int) -> void
+    print(to_str(c))
     a = 20
     print(to_str(a))
     a = 30

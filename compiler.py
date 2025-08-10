@@ -515,6 +515,8 @@ class Parser:
         self.struct_types = {}  # Armazenar tipos de struct definidos
         self.defined_functions = set()  # Conjunto de funções definidas
         self.defined_structs = set()    # Conjunto de structs definidos
+        # Profundidade de funções para identificar escopo atual (0 = topo do arquivo)
+        self.in_function_depth = 0
     
     def _error(self, message: str) -> None:
         """Lança um erro de sintaxe com informações de linha e coluna"""
@@ -625,8 +627,11 @@ class Parser:
     
     def _parse_statement(self) -> Optional[ASTNode]:
         if self._match(TokenType.LET):
-            return self._parse_assignment(is_global=False)
+            # No topo do arquivo, 'let' define variável global; dentro de função, local
+            is_global = (getattr(self, 'in_function_depth', 0) == 0)
+            return self._parse_assignment(is_global=is_global)
         elif self._match(TokenType.GLOBAL):
+            # Manter suporte à keyword 'global' (opcional), sempre global
             return self._parse_assignment(is_global=True)
         elif self._match(TokenType.PRINT):
             return self._parse_print()
@@ -853,11 +858,15 @@ class Parser:
         if self._match(TokenType.ARROW):
             return_type = self._parse_type()
             
+        # Entrando em escopo de função
+        self.in_function_depth += 1
         body = []
         while not self._match(TokenType.END) and not self._is_at_end():
             stmt = self._parse_statement()
             if stmt:
                 body.append(stmt)
+        # Saindo do escopo de função
+        self.in_function_depth -= 1
         
         # Registrar a função como definida
         self.defined_functions.add(name.value)
@@ -1187,16 +1196,24 @@ class LLVMCodeGenerator:
         llvm.initialize_native_target()
         llvm.initialize_native_asmprinter()
         
-        # Obter o triple da plataforma atual
-        self.triple = llvm.get_default_triple()
+        # Obter o triple da plataforma atual; ajustar para MinGW/GCC quando necessário
+        default_triple = llvm.get_default_triple()
+        # Se for MSVC triple, ajuste para GNU (MinGW) para permitir link com gcc
+        if default_triple.endswith("-pc-windows-msvc"):
+            self.triple = default_triple.replace("-pc-windows-msvc", "-w64-windows-gnu")
+        else:
+            self.triple = default_triple
         
         # Criar módulo e builder
         self.module = ir.Module(name="minilang_module")
         self.module.triple = self.triple
         
-        # Configurar data layout baseado na plataforma
+        # Configurar data layout baseado na plataforma (preferir código estático para GCC/MinGW)
         target = llvm.Target.from_triple(self.triple)
-        target_machine = target.create_target_machine()
+        try:
+            target_machine = target.create_target_machine(reloc='static', codemodel='large', opt=2)
+        except TypeError:
+            target_machine = target.create_target_machine(opt=2)
         self.module.data_layout = str(target_machine.target_data)
         
         self.builder = None
@@ -1222,6 +1239,8 @@ class LLVMCodeGenerator:
         self.string_type = ir.IntType(8).as_pointer()  # Garante i8*
         self.void_type = ir.VoidType()
         self.bool_type = ir.IntType(1)
+        # Indicador de geração no nível top (código do arquivo dentro de main)
+        self.in_top_level = False
         
         # Declarar funções externas
         self._declare_external_functions()
@@ -1405,6 +1424,8 @@ class LLVMCodeGenerator:
     def generate(self, ast: ProgramNode):
         # Armazenar AST global
         self.global_ast = ast
+        # Rastreador para pular a primeira declaração global na geração de statements
+        self._seen_first_global_let: set[str] = set()
         
         # Primeiro, processar definições de struct para criar os tipos LLVM
         for stmt in ast.statements:
@@ -1414,14 +1435,14 @@ class LLVMCodeGenerator:
         # Segunda passada: atualizar tipos de referência com os tipos corretos dos structs
         self._update_reference_types()
         
-        # Depois, declarar todas as variáveis globais e funções
+        # Depois, declarar todas as variáveis globais e funções (deduplicado por identificador)
+        declared_globals: set[str] = set()
         for stmt in ast.statements:
-            if isinstance(stmt, AssignmentNode):
-                # IMPORTANTE: Declarações 'let' no escopo global são tratadas como variáveis globais
-                # mesmo que is_global=False, pois estão no nível raiz do programa
-                if stmt.is_global or (isinstance(stmt, AssignmentNode) and not hasattr(self, 'current_function')):
-                    stmt.is_global = True  # Forçar como global se estiver no escopo raiz
-                    self._declare_global_variable(stmt)
+            if isinstance(stmt, AssignmentNode) and stmt.is_global:
+                if stmt.identifier in declared_globals:
+                    continue
+                declared_globals.add(stmt.identifier)
+                self._declare_global_variable(stmt)
             elif isinstance(stmt, FunctionNode):
                 self._declare_function(stmt)
         
@@ -1434,6 +1455,7 @@ class LLVMCodeGenerator:
         self.builder = ir.IRBuilder(entry_block)
         self.current_function = main_func
         self.local_vars = {}
+        self.in_top_level = True
         
         # Criar array de alocações no início da função para garantir dominância
         if self.memory_tracking:
@@ -1455,16 +1477,42 @@ class LLVMCodeGenerator:
         # Não antecipe atribuições locais: gerar statements na ordem original
         
         # Depois, inicializar variáveis globais com chamadas de função
-        if hasattr(self, 'global_init_calls'):
-            for init_node in self.global_init_calls:
+        if hasattr(self, 'global_runtime_inits'):
+            for init_node in self.global_runtime_inits:
                 # Gerar o valor da chamada de função
                 value = self._generate_expression(init_node.value)
-                # Armazenar na variável global
-                self.builder.store(value, self.global_vars[init_node.identifier])
+                gv = self.global_vars[init_node.identifier]
+                target_type = self.type_map.get(init_node.identifier)
+                # Se for array global, copiar elementos em vez de dar store do ponteiro
+                from llvmlite import ir as _ir
+                if isinstance(target_type, ArrayType):
+                    zero32 = _ir.IntType(32)(0)
+                    dst_elem_ptr = self.builder.gep(gv, [zero32, zero32], inbounds=True)
+                    num = target_type.size or 0
+                    if num > 0:
+                        for i in range(num):
+                            src_ptr = self.builder.gep(value, [self.int_type(i)], inbounds=True)
+                            src_val = self.builder.load(src_ptr)
+                            dst_ptr = self.builder.gep(dst_elem_ptr, [self.int_type(i)], inbounds=True)
+                            self.builder.store(src_val, dst_ptr)
+                elif isinstance(target_type, StringType) or isinstance(target_type, StrType):
+                    # Strings globais em runtime: apenas store do ponteiro retornado
+                    if isinstance(value.type, _ir.PointerType) and value.type.pointee != self.char_type:
+                        value = self.builder.bitcast(value, self.string_type)
+                    self.builder.store(value, gv)
+                else:
+                    # Escalares: armazenar diretamente
+                    self.builder.store(value, gv)
         
         # Processar todos os statements (exceto definições de função) na ordem original
         for stmt in ast.statements:
             if not isinstance(stmt, FunctionNode):
+                # Evitar duplicar inicialização de globais
+                if isinstance(stmt, AssignmentNode) and stmt.is_global:
+                    # Pular a primeira ocorrência (já inicializada via initializer ou global_init_calls)
+                    if stmt.identifier not in self._seen_first_global_let:
+                        self._seen_first_global_let.add(stmt.identifier)
+                        continue
                 self._generate_statement(stmt)
         
         # Adicionar limpeza de memória antes do return
@@ -1475,6 +1523,8 @@ class LLVMCodeGenerator:
         if not self.builder.block.is_terminated:
             self.builder.ret(ir.Constant(ir.IntType(32), 0))
         
+        # Sair do nível top-level
+        self.in_top_level = False
         # Gerar código para as funções
         for stmt in ast.statements:
             if isinstance(stmt, FunctionNode):
@@ -1665,86 +1715,41 @@ class LLVMCodeGenerator:
             raise Exception(f"Valor inicial de global não suportado: {node}")
 
     def _declare_global_variable(self, node: AssignmentNode):
-        """Declara uma variável global"""
+        """Declara uma variável global com valor neutro e agenda a
+        inicialização em tempo de execução (no início de main) se houver valor."""
+        # Evitar redefinição de globais com o mesmo nome
+        if node.identifier in self.global_vars:
+            # Se já existe, validar tipo (quando disponível) e ignorar nova declaração
+            existing_type = self.type_map.get(node.identifier)
+            if node.var_type is not None and existing_type is not None and type(existing_type) != type(node.var_type):
+                raise TypeError(f"Redeclaração de global '{node.identifier}' com tipo diferente")
+            # Mapear tipo se ainda não mapeado
+            if existing_type is None and node.var_type is not None:
+                self.type_map[node.identifier] = node.var_type
+            return
         var_type = self._convert_type(node.var_type)
         
         # Verificar se o valor é uma chamada de função
         is_function_call = isinstance(node.value, CallNode)
         
-        # Criar variável global
+        # Criar variável global com valor neutro (zero/null)
+        is_nonconstant_runtime_init = node.value is not None
         if isinstance(node.var_type, ArrayType):
-            # Para arrays, precisamos inicializar com o tamanho correto
-            if node.var_type.size:
-                elem_type = self._convert_type(node.var_type.element_type)
-                # Corrigir: para array de string, usar array de ponteiros para char
-                if isinstance(node.var_type.element_type, StringType) or isinstance(node.var_type.element_type, StrType):
-                    array_type = ir.ArrayType(self.char_type.as_pointer(), node.var_type.size)
-                    gv = ir.GlobalVariable(self.module, array_type, name=node.identifier)
-                    if node.value and not is_function_call:
-                        init = self._eval_constant(node.value)
-                        llvm_ptrs = []
-                        for idx, v in enumerate(init):
-                            if v is None:
-                                llvm_ptrs.append(ir.Constant(self.char_type.as_pointer(), None))
-                            elif v == "":
-                                # Criar string global vazia
-                                str_bytes = b"\0"
-                                str_type = ir.ArrayType(self.char_type, 1)
-                                str_name = f"{node.identifier}_empty_{idx}"
-                                str_global = ir.GlobalVariable(self.module, str_type, name=str_name)
-                                str_global.linkage = 'internal'
-                                str_global.global_constant = True
-                                str_global.initializer = ir.Constant(str_type, bytearray(str_bytes))
-                                ptr = str_global.bitcast(self.char_type.as_pointer())
-                                llvm_ptrs.append(ptr)
-                            else:
-                                # Criar string global para o valor
-                                str_bytes = (v + '\0').encode('utf8')
-                                str_type = ir.ArrayType(self.char_type, len(str_bytes))
-                                str_name = f"{node.identifier}_{idx}"
-                                str_global = ir.GlobalVariable(self.module, str_type, name=str_name)
-                                str_global.linkage = 'internal'
-                                str_global.global_constant = True
-                                str_global.initializer = ir.Constant(str_type, bytearray(str_bytes))
-                                ptr = str_global.bitcast(self.char_type.as_pointer())
-                                llvm_ptrs.append(ptr)
-                        gv.initializer = ir.Constant(array_type, llvm_ptrs)
-                    else:
-                        gv.initializer = ir.Constant(array_type, [ir.Constant(self.char_type.as_pointer(), None)] * node.var_type.size)
-                elif isinstance(node.var_type.element_type, FloatType):
-                    array_type = ir.ArrayType(elem_type, node.var_type.size)
-                    gv = ir.GlobalVariable(self.module, array_type, name=node.identifier)
-                    if node.value and not is_function_call:
-                        init = self._eval_constant(node.value)
-                        gv.initializer = ir.Constant(array_type, init)
-                    else:
-                        gv.initializer = ir.Constant(array_type, [0.0] * node.var_type.size)
-                else:
-                    array_type = ir.ArrayType(elem_type, node.var_type.size)
-                    gv = ir.GlobalVariable(self.module, array_type, name=node.identifier)
-                    if node.value and not is_function_call:
-                        init = self._eval_constant(node.value)
-                        gv.initializer = ir.Constant(array_type, init)
-                    else:
-                        gv.initializer = ir.Constant(array_type, [0] * node.var_type.size)
-            else:
-                # Array sem tamanho definido, usar ponteiro
-                gv = ir.GlobalVariable(self.module, var_type, name=node.identifier)
-                gv.initializer = ir.Constant(var_type, None)
+            # Arrays estáticos: inicializar zerados
+            element_lltype = self._convert_type(node.var_type.element_type)
+            array_type = ir.ArrayType(element_lltype, node.var_type.size or 0)
+            gv = ir.GlobalVariable(self.module, array_type, name=node.identifier)
+            gv.initializer = ir.Constant(array_type, None)
         else:
             gv = ir.GlobalVariable(self.module, var_type, name=node.identifier)
             if isinstance(node.var_type, IntType):
-                if node.value and not is_function_call:
-                    init = self._eval_constant(node.value)
-                    gv.initializer = ir.Constant(var_type, init)
-                else:
-                    gv.initializer = ir.Constant(var_type, 0)
+                gv.initializer = ir.Constant(var_type, 0)
             elif isinstance(node.var_type, FloatType):
-                if node.value and not is_function_call:
-                    init = self._eval_constant(node.value)
-                    gv.initializer = ir.Constant(var_type, init)
-                else:
-                    gv.initializer = ir.Constant(var_type, 0.0)
+                gv.initializer = ir.Constant(var_type, 0.0)
+            elif isinstance(node.var_type, BoolType):
+                gv.initializer = ir.Constant(var_type, 0)
+            elif isinstance(node.var_type, (StringType, StrType)):
+                gv.initializer = ir.Constant(var_type, None)
             else:
                 gv.initializer = ir.Constant(var_type, None)
         
@@ -1752,11 +1757,11 @@ class LLVMCodeGenerator:
         self.global_vars[node.identifier] = gv
         self.type_map[node.identifier] = node.var_type
         
-        # Se é uma chamada de função, armazenar para inicialização posterior
-        if is_function_call:
-            if not hasattr(self, 'global_init_calls'):
-                self.global_init_calls = []
-            self.global_init_calls.append(node)
+        # Se há valor (inclusive chamadas), agendar inicialização em runtime
+        if is_function_call or is_nonconstant_runtime_init:
+            if not hasattr(self, 'global_runtime_inits'):
+                self.global_runtime_inits = []
+            self.global_runtime_inits.append(node)
     
     def _declare_function(self, node: FunctionNode):
         # Converter tipos dos parâmetros com tratamento especial para referências
@@ -1964,10 +1969,12 @@ class LLVMCodeGenerator:
             self._generate_expression(node)
     
     def _generate_assignment(self, node: AssignmentNode):
-        if node.is_global and node.var_type is not None:
-            # Variável global já foi declarada
+        # Tratar como global apenas se for declaração (tem tipo) E já existir em self.global_vars
+        is_declared_global = (node.is_global and node.var_type is not None and node.identifier in self.global_vars)
+        if is_declared_global:
             value = self._generate_expression(node.value)
             self.builder.store(value, self.global_vars[node.identifier])
+            return
         else:
             # Variável local ou reatribuição
             # Configurar tipo de struct atual para geração de valores null
@@ -1985,28 +1992,9 @@ class LLVMCodeGenerator:
                 if node.identifier in self.local_vars:
                     self.builder.store(value, self.local_vars[node.identifier])
                 elif node.identifier in self.global_vars:
-                    # Se estamos dentro de uma função, verificar se o parâmetro tem o mesmo nome
-                    if self.current_function is not None:
-                        # Verificar se é um parâmetro da função atual
-                        current_func_ast = self.current_function_ast
-                        if current_func_ast and any(param_name == node.identifier for param_name, _ in current_func_ast.params):
-                            # É um parâmetro da função, não permitir modificação da variável global
-                            # Criar uma nova variável local com o mesmo nome
-                            var_type = self.type_map.get(node.identifier, self.int_type)
-                            if isinstance(var_type, str):
-                                var_type = self._convert_type(IntType())  # Fallback para int
-                            else:
-                                var_type = self._convert_type(var_type)
-                            
-                            alloca = self.builder.alloca(var_type, name=f"{node.identifier}_local")
-                            self.local_vars[node.identifier] = alloca
-                            self.builder.store(value, alloca)
-                        else:
-                            # Não é um parâmetro, permitir modificação da variável global
-                            self.builder.store(value, self.global_vars[node.identifier])
-                    else:
-                        # Não estamos dentro de uma função, permitir modificação da variável global
-                        self.builder.store(value, self.global_vars[node.identifier])
+                    # Permitir reatribuição de globais em qualquer escopo;
+                    # locais têm precedência via self.local_vars acima
+                    self.builder.store(value, self.global_vars[node.identifier])
                 else:
                     raise NameError(f"Variável '{node.identifier}' não definida")
             else:
@@ -2753,11 +2741,19 @@ class LLVMCodeGenerator:
                     struct_ptr = self.builder.load(struct_ptr)
             elif node.struct_name in self.global_vars:
                 struct_ptr = self.global_vars[node.struct_name]
+                # Se for uma GlobalVariable cujo pointee é ponteiro (ex.: Node**), carregar para obter Node*
+                from llvmlite import ir as _ir
+                if isinstance(struct_ptr, _ir.GlobalVariable):
+                    if isinstance(struct_ptr.type, _ir.PointerType) and isinstance(struct_ptr.type.pointee, _ir.PointerType):
+                        struct_ptr = self.builder.load(struct_ptr)
             else:
                 # Procurar nas variáveis globais do módulo
                 struct_ptr = self.module.globals.get(node.struct_name)
                 if struct_ptr is None:
                     raise NameError(f"Variável '{node.struct_name}' não encontrada")
+            if (isinstance(struct_ptr.type, ir.PointerType)
+                    and isinstance(struct_ptr.type.pointee, ir.PointerType)):
+                struct_ptr = self.builder.load(struct_ptr)
             
             # Determinar o tipo de struct baseado na variável
             struct_type_name = None
@@ -3695,10 +3691,17 @@ class LLVMCodeGenerator:
             if isinstance(struct_ptr, llvmlite.ir.instructions.AllocaInstr):
                 struct_ptr = self.builder.load(struct_ptr)
         else:
-            # Procurar nas variáveis globais
-            struct_ptr = self.module.globals.get(node.struct_name)
-            if struct_ptr is None:
-                raise NameError(f"Struct '{node.struct_name}' não encontrado")
+            # Procurar nas variáveis globais (mapa interno primeiro)
+            if node.struct_name in self.global_vars:
+                struct_ptr = self.global_vars[node.struct_name]
+            else:
+                struct_ptr = self.module.globals.get(node.struct_name)
+                if struct_ptr is None:
+                    raise NameError(f"Struct '{node.struct_name}' não encontrado")
+            # Se a global armazena ponteiro para struct (Node**), carregar para obter Node*
+            from llvmlite import ir as _ir
+            if isinstance(struct_ptr.type, _ir.PointerType) and isinstance(struct_ptr.type.pointee, _ir.PointerType):
+                struct_ptr = self.builder.load(struct_ptr)
         
         # Determinar o tipo de struct baseado na variável
         struct_type_name = None
@@ -3716,9 +3719,12 @@ class LLVMCodeGenerator:
         if node.field_name not in self.struct_fields[struct_type_name]:
             raise NameError(f"Campo '{node.field_name}' não encontrado em struct '{struct_type_name}'")
         
-        # Fazer cast do ponteiro para void para o tipo correto do struct
+        # Ajustar ponteiro base e fazer cast para o tipo correto do struct
         if struct_type_name in self.struct_types:
             struct_type = self.struct_types[struct_type_name]
+            # Se ainda for ponteiro para ponteiro, carregar primeiro (ex.: global Node**)
+            if isinstance(struct_ptr.type, ir.PointerType) and isinstance(struct_ptr.type.pointee, ir.PointerType):
+                struct_ptr = self.builder.load(struct_ptr)
             struct_ptr = self.builder.bitcast(struct_ptr, struct_type.as_pointer())
         
         # Obter o índice do campo
@@ -3776,10 +3782,17 @@ class LLVMCodeGenerator:
                 # É uma variável local que é um ponteiro para struct, precisa dereferenciar
                 struct_ptr = self.builder.load(struct_ptr)
         else:
-            # Procurar nas variáveis globais
-            struct_ptr = self.module.globals.get(node.struct_name)
-            if struct_ptr is None:
-                raise NameError(f"Struct '{node.struct_name}' não encontrado")
+            # Procurar nas variáveis globais (preferir mapa interno)
+            if node.struct_name in self.global_vars:
+                struct_ptr = self.global_vars[node.struct_name]
+            else:
+                struct_ptr = self.module.globals.get(node.struct_name)
+                if struct_ptr is None:
+                    raise NameError(f"Struct '{node.struct_name}' não encontrado")
+            # Globais armazenam ponteiro para struct (ex.: Node**). Carregar para obter Node*
+            from llvmlite import ir as _ir
+            if isinstance(struct_ptr.type, _ir.PointerType) and isinstance(struct_ptr.type.pointee, _ir.PointerType):
+                struct_ptr = self.builder.load(struct_ptr)
         
         # Determinar o tipo de struct baseado na variável
         struct_type_name = None
@@ -3793,9 +3806,12 @@ class LLVMCodeGenerator:
         if not struct_type_name or struct_type_name not in self.struct_fields:
             raise NameError(f"Struct '{struct_type_name}' não encontrado")
         
-        # Fazer cast do ponteiro para void para o tipo correto do struct
+        # Ajustar ponteiro base e fazer cast para o tipo correto do struct
         if struct_type_name in self.struct_types:
             struct_type = self.struct_types[struct_type_name]
+            # Se ainda for ponteiro para ponteiro, carregar primeiro (ex.: global Node**)
+            if isinstance(struct_ptr.type, ir.PointerType) and isinstance(struct_ptr.type.pointee, ir.PointerType):
+                struct_ptr = self.builder.load(struct_ptr)
             struct_ptr = self.builder.bitcast(struct_ptr, struct_type.as_pointer())
         
         # Navegar pelo caminho dos campos
@@ -3834,7 +3850,7 @@ class LLVMCodeGenerator:
                             
                             # Verificar se é null
                             null_ptr = ir.Constant(field_ptr.type.pointee, None)
-                            is_null = self.builder.icmp_signed('==', field_value, null_ptr)
+                            is_null = self.builder.icmp_unsigned('==', field_value, null_ptr)
                             
                             # Se é null, criar um novo struct
                             # Criar blocos para if/else
@@ -3847,22 +3863,11 @@ class LLVMCodeGenerator:
                             
                             # Bloco then: criar novo struct
                             self.builder.position_at_end(then_block)
-                            # Calcular tamanho do struct baseado nos campos
-                            struct_size = 0
-                            for llvm_field_type in field_struct_type.elements:
-                                if isinstance(llvm_field_type, ir.IntType):
-                                    if llvm_field_type.width == 1:  # bool
-                                        struct_size += 1
-                                    elif llvm_field_type.width == 64:  # int
-                                        struct_size += 8
-                                elif isinstance(llvm_field_type, ir.DoubleType):  # float
-                                    struct_size += 8
-                                elif isinstance(llvm_field_type, ir.PointerType):  # string/pointer
-                                    struct_size += 8
-                            
-                            # Alinhar para 8 bytes (padrão x86_64)
-                            struct_size = (struct_size + 7) & ~7
-                            size_val = ir.Constant(ir.IntType(64), struct_size)
+                            # Calcular tamanho correto via GEP(null, 1) e ptrtoint
+                            null_ptr = ir.Constant(field_struct_type.as_pointer(), None)
+                            one32 = ir.Constant(ir.IntType(32), 1)
+                            size_ptr = self.builder.gep(null_ptr, [one32])
+                            size_val = self.builder.ptrtoint(size_ptr, ir.IntType(64))
                             new_struct_ptr = self.builder.call(self.malloc, [size_val])
                             self._track_allocation(new_struct_ptr)
                             
@@ -3889,8 +3894,7 @@ class LLVMCodeGenerator:
                             # Bloco de merge: continuar com o ponteiro correto
                             self.builder.position_at_end(merge_block)
                             
-                            # Definir current_ptr baseado no bloco de onde veio
-                            # Usar phi node para selecionar o valor correto
+                            # Definir current_ptr baseado no bloco de onde veio (phi)
                             phi_current_ptr = self.builder.phi(field_struct_type.as_pointer())
                             phi_current_ptr.add_incoming(new_struct_ptr, then_block)
                             phi_current_ptr.add_incoming(current_ptr, else_block)
@@ -3908,7 +3912,7 @@ class LLVMCodeGenerator:
                             
                             # Verificar se é null
                             null_ptr = ir.Constant(field_ptr.type.pointee, None)
-                            is_null = self.builder.icmp_signed('==', field_value, null_ptr)
+                            is_null = self.builder.icmp_unsigned('==', field_value, null_ptr)
                             
                             # Criar blocos para if/else
                             then_block = self.builder.function.append_basic_block('then')
@@ -3920,22 +3924,11 @@ class LLVMCodeGenerator:
                             
                             # Bloco then: criar novo struct
                             self.builder.position_at_end(then_block)
-                            # Calcular tamanho do struct baseado nos campos
-                            struct_size = 0
-                            for llvm_field_type in field_struct_type.elements:
-                                if isinstance(llvm_field_type, ir.IntType):
-                                    if llvm_field_type.width == 1:  # bool
-                                        struct_size += 1
-                                    elif llvm_field_type.width == 64:  # int
-                                        struct_size += 8
-                                elif isinstance(llvm_field_type, ir.DoubleType):  # float
-                                    struct_size += 8
-                                elif isinstance(llvm_field_type, ir.PointerType):  # string/pointer
-                                    struct_size += 8
-                            
-                            # Alinhar para 8 bytes (padrão x86_64)
-                            struct_size = (struct_size + 7) & ~7
-                            size_val = ir.Constant(ir.IntType(64), struct_size)
+                            # Calcular tamanho correto via GEP(null, 1) e ptrtoint
+                            null_ptr = ir.Constant(field_struct_type.as_pointer(), None)
+                            one32 = ir.Constant(ir.IntType(32), 1)
+                            size_ptr = self.builder.gep(null_ptr, [one32])
+                            size_val = self.builder.ptrtoint(size_ptr, ir.IntType(64))
                             new_struct_ptr = self.builder.call(self.malloc, [size_val])
                             self._track_allocation(new_struct_ptr)
                             
@@ -3964,8 +3957,7 @@ class LLVMCodeGenerator:
                             # Bloco de merge: continuar com o ponteiro correto
                             self.builder.position_at_end(merge_block)
                             
-                            # Definir current_ptr baseado no bloco de onde veio
-                            # Usar phi node para selecionar o valor correto
+                            # Definir current_ptr baseado no bloco de onde veio (phi)
                             phi_current_ptr = self.builder.phi(field_struct_type.as_pointer())
                             phi_current_ptr.add_incoming(new_struct_ptr, then_block)
                             phi_current_ptr.add_incoming(current_ptr, else_block)
@@ -4005,16 +3997,9 @@ class LLVMCodeGenerator:
                         if value.type != field_ptr.type.pointee:
                             value = self.builder.bitcast(value, field_ptr.type.pointee)
                 else:
-                    # Para campos que não são referências, verificar se precisamos fazer cast
-                    if hasattr(value, 'type') and hasattr(field_ptr, 'type'):
-                        if value.type != field_ptr.type.pointee:
-                            # Tentar fazer cast se os tipos forem compatíveis
-                            try:
-                                value = self.builder.bitcast(value, field_ptr.type.pointee)
-                            except:
-                                # Se o cast falhar, tentar converter o valor para o tipo esperado
-                                if isinstance(field_ptr.type.pointee, ir.PointerType):
-                                    # Se o campo espera um ponteiro, fazer cast
+                    # Para campos que não são referências, garantir type match exato
+                    if hasattr(value, 'type') and hasattr(field_ptr, 'type') and value.type != field_ptr.type.pointee:
+                        if isinstance(value.type, ir.PointerType) and isinstance(field_ptr.type.pointee, ir.PointerType):
                                     value = self.builder.bitcast(value, field_ptr.type.pointee)
                 
                 # Armazenar o valor
@@ -4099,10 +4084,12 @@ class LLVMCodeGenerator:
             raise NameError(f"Struct '{struct_name}' não definido")
         struct_type = self.struct_types[struct_name]
         
-        # Calcular o tamanho correto do struct
-        struct_size = self._calculate_struct_size(struct_type)
-        
-        size = self.builder.call(self.malloc, [ir.Constant(ir.IntType(64), struct_size)])
+        # Calcular tamanho via GEP(null, 1) e ptrtoint para respeitar layout do LLVM
+        null_ptr = ir.Constant(struct_type.as_pointer(), None)
+        one = ir.Constant(ir.IntType(32), 1)
+        size_ptr = self.builder.gep(null_ptr, [one])
+        size = self.builder.ptrtoint(size_ptr, ir.IntType(64))
+        size = self.builder.call(self.malloc, [size])
         self._track_allocation(size)
         struct_ptr = self.builder.bitcast(size, struct_type.as_pointer())
         struct_info = None
@@ -4124,10 +4111,7 @@ class LLVMCodeGenerator:
                     ir.Constant(ir.IntType(32), 0),
                     ir.Constant(ir.IntType(32), i)
                 ])
-                if isinstance(arg_value, ir.Constant) and arg_value.type == ir.IntType(8).as_pointer():
-                    if isinstance(llvm_field_type, ir.PointerType):
-                        arg_value = ir.Constant(llvm_field_type, None)
-                elif isinstance(field_type, ReferenceType):
+                if isinstance(field_type, ReferenceType):
                     # Para campos de referência, garantir que o valor seja um ponteiro nulo se for null
                     if isinstance(arg_value.type, ir.IntType) and arg_value.type.width == 64:
                         # Se o valor é null (i64), converter para ponteiro nulo
@@ -4145,10 +4129,32 @@ class LLVMCodeGenerator:
                     # O ponteiro já é o tipo correto
                     pass
                 
-                # Verificar se os tipos são compatíveis antes de armazenar
-                if arg_value.type != field_ptr.type.pointee:
-                    # Se os tipos não são compatíveis, usar valor nulo
-                    arg_value = ir.Constant(field_ptr.type.pointee, None)
+                # Caso especial: campo é array estático e argumento é ponteiro para array → copiar elementos
+                target_ty = field_ptr.type.pointee
+                from llvmlite import ir as _ir
+                if isinstance(target_ty, _ir.ArrayType) and isinstance(arg_value.type, _ir.PointerType) and isinstance(arg_value.type.pointee, _ir.ArrayType):
+                    zero32 = _ir.Constant(_ir.IntType(32), 0)
+                    # dst: ponteiro para primeiro elemento do array no struct
+                    dst_elem_ptr = self.builder.gep(field_ptr, [zero32, zero32], inbounds=True)
+                    # src: ponteiro para primeiro elemento do array fonte
+                    src_elem_ptr = self.builder.gep(arg_value, [zero32, zero32], inbounds=True)
+                    for idx in range(target_ty.count):
+                        idx_const = _ir.Constant(self.int_type, idx)
+                        si = self.builder.gep(src_elem_ptr, [idx_const], inbounds=True)
+                        di = self.builder.gep(dst_elem_ptr, [idx_const], inbounds=True)
+                        self.builder.store(self.builder.load(si), di)
+                    continue
+                if arg_value.type != target_ty:
+                    if isinstance(arg_value.type, ir.PointerType) and isinstance(target_ty, ir.PointerType):
+                        arg_value = self.builder.bitcast(arg_value, target_ty)
+                    elif isinstance(arg_value.type, ir.IntType) and isinstance(target_ty, ir.IntType):
+                        if arg_value.type.width < target_ty.width:
+                            arg_value = self.builder.sext(arg_value, target_ty)
+                        elif arg_value.type.width > target_ty.width:
+                            arg_value = self.builder.trunc(arg_value, target_ty)
+                    else:
+                        # Como fallback, não converter e deixar o LLVM apontar erro se houver
+                        pass
                 
                 self.builder.store(arg_value, field_ptr)
         return struct_ptr
@@ -4232,8 +4238,12 @@ class MiniLangCompiler:
             llvm.initialize_native_target()
             llvm.initialize_native_asmprinter()
             
-            # Obter o triple correto para a plataforma
-            triple = llvm.get_default_triple()
+            # Obter o triple correto para a plataforma e ajustar para MinGW/GCC quando necessário
+            default_triple = llvm.get_default_triple()
+            if default_triple.endswith("-pc-windows-msvc"):
+                triple = default_triple.replace("-pc-windows-msvc", "-w64-windows-gnu")
+            else:
+                triple = default_triple
             print(f"Triple: {triple}")
             
             # Criar target
@@ -4241,17 +4251,11 @@ class MiniLangCompiler:
             print(f"Target criado: {target}")
             
             # Criar target machine com configurações apropriadas
-            if sys.platform == "win32":
-                print("Configurando target machine para Windows...")
-                # Para Windows x64, usar large code model para evitar problemas de relocação
-                target_machine = target.create_target_machine(
-                    cpu='generic',
-                    features='',
-                    opt=2,
-                    reloc='pic',  # Position Independent Code
-                    codemodel='large'  # Large code model para endereços de 64 bits
-                )
-            else:
+            print("Configurando target machine para Windows...")
+            # Usar config estática para evitar GOT/_GLOBAL_OFFSET_TABLE_ com GCC/MinGW
+            try:
+                target_machine = target.create_target_machine(reloc='static', codemodel='large', opt=2)
+            except TypeError:
                 target_machine = target.create_target_machine(opt=2)
             
             print(f"Target machine criada: {target_machine}")
