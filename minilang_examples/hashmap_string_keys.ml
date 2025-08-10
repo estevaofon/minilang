@@ -8,12 +8,8 @@ end
 
 let CAPACITY: int = 16
 
-// Wrapper para contornar limitação de array de refs
-struct Bucket
-    head: ref EntryS
-end
-
-let buckets: Bucket[16] = [Bucket(null), Bucket(null), Bucket(null), Bucket(null), Bucket(null), Bucket(null), Bucket(null), Bucket(null), Bucket(null), Bucket(null), Bucket(null), Bucket(null), Bucket(null), Bucket(null), Bucket(null), Bucket(null)]
+// Agora usamos diretamente um array de ponteiros para EntryS (lista encadeada)
+let buckets: EntryS[16] = [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null]
 
 func hash_str(s: string) -> int
     // djb2-like: h = h*33 + c
@@ -46,11 +42,11 @@ end
 
 func put_s(key: string, value: int) -> void
     let idx: int = hash_str(key)
-    if buckets[idx].head == null then
-        buckets[idx].head = EntryS(key, value, null)
+    if buckets[idx] == null then
+        buckets[idx] = EntryS(key, value, null)
         return
     end
-    let cur: ref EntryS = buckets[idx].head
+    let cur: ref EntryS = buckets[idx]
     let prev: ref EntryS = null
     while cur != null do
         if str_eq(cur.key, key) then
@@ -65,7 +61,7 @@ end
 
 func get_s(key: string) -> int
     let idx: int = hash_str(key)
-    let cur: ref EntryS = buckets[idx].head
+    let cur: ref EntryS = buckets[idx]
     while cur != null do
         if str_eq(cur.key, key) then
             return cur.value
@@ -77,12 +73,12 @@ end
 
 func remove_s(key: string) -> void
     let idx: int = hash_str(key)
-    let cur: ref EntryS = buckets[idx].head
+    let cur: ref EntryS = buckets[idx]
     let prev: ref EntryS = null
     while cur != null do
         if str_eq(cur.key, key) then
             if prev == null then
-                buckets[idx].head = cur.next
+                buckets[idx] = cur.next
             else
                 prev.next = cur.next
             end

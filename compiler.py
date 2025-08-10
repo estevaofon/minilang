@@ -2002,7 +2002,8 @@ class LLVMCodeGenerator:
         # Tratar como global apenas se for declaração (tem tipo) E já existir em self.global_vars
         is_declared_global = (node.is_global and node.var_type is not None and node.identifier in self.global_vars)
         if is_declared_global:
-            value = self._generate_expression(node.value)
+            expected_ty = self._convert_type(node.var_type) if node.var_type is not None else None
+            value = self._generate_expression(node.value, expected_ty)
             self.builder.store(value, self.global_vars[node.identifier])
             return
         else:
@@ -2013,7 +2014,8 @@ class LLVMCodeGenerator:
             else:
                 self.current_struct_type = None
             
-            value = self._generate_expression(node.value)
+            expected_ty = self._convert_type(node.var_type) if node.var_type is not None else None
+            value = self._generate_expression(node.value, expected_ty)
             
             if node.var_type is None:
                 # Reatribuição - variável já existe
@@ -2077,6 +2079,12 @@ class LLVMCodeGenerator:
                         # Se o valor é null (i64), converter para ponteiro nulo
                         null_ptr = ir.Constant(var_type, None)
                         self.builder.store(null_ptr, alloca)
+                    elif (isinstance(value.type, ir.PointerType) and
+                          isinstance(var_type, ir.PointerType) and
+                          value.type != var_type):
+                        # Ex.: i8* -> {struct}*
+                        value = self.builder.bitcast(value, var_type)
+                        self.builder.store(value, alloca)
                     elif (isinstance(value.type, ir.PointerType) and 
                         isinstance(value.type.pointee, ir.LiteralStructType) and
                         isinstance(var_type, ir.PointerType) and
