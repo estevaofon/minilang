@@ -1416,8 +1416,12 @@ class LLVMCodeGenerator:
         
         # Depois, declarar todas as variáveis globais e funções
         for stmt in ast.statements:
-            if isinstance(stmt, AssignmentNode) and stmt.is_global:
-                self._declare_global_variable(stmt)
+            if isinstance(stmt, AssignmentNode):
+                # IMPORTANTE: Declarações 'let' no escopo global são tratadas como variáveis globais
+                # mesmo que is_global=False, pois estão no nível raiz do programa
+                if stmt.is_global or (isinstance(stmt, AssignmentNode) and not hasattr(self, 'current_function')):
+                    stmt.is_global = True  # Forçar como global se estiver no escopo raiz
+                    self._declare_global_variable(stmt)
             elif isinstance(stmt, FunctionNode):
                 self._declare_function(stmt)
         
@@ -1448,10 +1452,7 @@ class LLVMCodeGenerator:
         if sys.platform == "win32":
             self._setup_windows_utf8()
         
-        # Primeiro, processar todas as variáveis locais para garantir que estejam disponíveis
-        for stmt in ast.statements:
-            if isinstance(stmt, AssignmentNode) and not stmt.is_global:
-                self._generate_statement(stmt)
+        # Não antecipe atribuições locais: gerar statements na ordem original
         
         # Depois, inicializar variáveis globais com chamadas de função
         if hasattr(self, 'global_init_calls'):
@@ -1461,9 +1462,9 @@ class LLVMCodeGenerator:
                 # Armazenar na variável global
                 self.builder.store(value, self.global_vars[init_node.identifier])
         
-        # Por fim, processar o resto dos statements (prints, etc.)
+        # Processar todos os statements (exceto definições de função) na ordem original
         for stmt in ast.statements:
-            if not isinstance(stmt, FunctionNode) and not isinstance(stmt, AssignmentNode):
+            if not isinstance(stmt, FunctionNode):
                 self._generate_statement(stmt)
         
         # Adicionar limpeza de memória antes do return
@@ -1979,10 +1980,33 @@ class LLVMCodeGenerator:
             
             if node.var_type is None:
                 # Reatribuição - variável já existe
+                # IMPORTANTE: Dentro de uma função, variáveis locais (incluindo parâmetros)
+                # sempre têm prioridade sobre variáveis globais para evitar conflitos de escopo
                 if node.identifier in self.local_vars:
                     self.builder.store(value, self.local_vars[node.identifier])
                 elif node.identifier in self.global_vars:
-                    self.builder.store(value, self.global_vars[node.identifier])
+                    # Se estamos dentro de uma função, verificar se o parâmetro tem o mesmo nome
+                    if self.current_function is not None:
+                        # Verificar se é um parâmetro da função atual
+                        current_func_ast = self.current_function_ast
+                        if current_func_ast and any(param_name == node.identifier for param_name, _ in current_func_ast.params):
+                            # É um parâmetro da função, não permitir modificação da variável global
+                            # Criar uma nova variável local com o mesmo nome
+                            var_type = self.type_map.get(node.identifier, self.int_type)
+                            if isinstance(var_type, str):
+                                var_type = self._convert_type(IntType())  # Fallback para int
+                            else:
+                                var_type = self._convert_type(var_type)
+                            
+                            alloca = self.builder.alloca(var_type, name=f"{node.identifier}_local")
+                            self.local_vars[node.identifier] = alloca
+                            self.builder.store(value, alloca)
+                        else:
+                            # Não é um parâmetro, permitir modificação da variável global
+                            self.builder.store(value, self.global_vars[node.identifier])
+                    else:
+                        # Não estamos dentro de uma função, permitir modificação da variável global
+                        self.builder.store(value, self.global_vars[node.identifier])
                 else:
                     raise NameError(f"Variável '{node.identifier}' não definida")
             else:
