@@ -1,0 +1,26 @@
+// Teste: Array de structs (armazenando ponteiros para elementos)
+
+struct Pessoa
+    id: int,
+    nome: string
+end
+
+// Cria duas pessoas
+let p1: Pessoa = Pessoa(1, "Ana")
+let p2: Pessoa = Pessoa(2, "Bruno")
+
+// Cria um array de Pessoas com 3 posições
+let pessoas: Pessoa[3] = [p1, p2, null]
+
+// Acessa campos via índice
+print(pessoas[0].nome)
+print(pessoas[1].nome)
+
+// Atualiza a terceira posição com novo struct
+let p3: Pessoa = Pessoa(3, "Carla")
+pessoas[2] = p3
+
+// Verifica atualização
+print(pessoas[2].nome)
+
+

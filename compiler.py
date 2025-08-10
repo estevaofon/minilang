@@ -457,6 +457,12 @@ class StructAccessNode(ASTNode):
     field_name: str
 
 @dataclass
+class StructAccessFromArrayNode(ASTNode):
+    """Acesso a campo de um elemento de array: arr[idx].campo (suporta aninhado)"""
+    base_access: ArrayAccessNode
+    field_path: str
+
+@dataclass
 class StructAssignmentNode(ASTNode):
     struct_name: str
     field_name: str
@@ -612,16 +618,18 @@ class Parser:
                 return ArrayType(BoolType(), size)
             return BoolType()
         elif self._check(TokenType.IDENTIFIER):
-            # Verificar se é um tipo de struct definido
-            struct_name = self._current_token().value
-            if struct_name in self.struct_types:
-                self._advance()  # Consumir o nome do tipo
-                return self.struct_types[struct_name]
-            else:
-                # Permitir forward declaration para auto-referenciamento
-                # Criar um tipo placeholder que será resolvido depois
-                self._advance()  # Consumir o nome do tipo
-                return StructType(struct_name, {})
+            # Suporte a tipos de struct e arrays de struct (ex.: Pessoa[3])
+            name_token = self._advance()  # Consumir o nome do tipo
+            type_obj = self.struct_types.get(name_token.value, StructType(name_token.value, {}))
+            # Verificar se é um array do tipo identificado
+            if self._match(TokenType.LBRACKET):
+                size = None
+                if self._current_token().type == TokenType.NUMBER:
+                    size = self._advance().value
+                if not self._match(TokenType.RBRACKET):
+                    self._error("Esperado ']' após tamanho do array")
+                return ArrayType(type_obj, size)
+            return type_obj
         else:
             self._error(f"Tipo esperado, encontrado {self._current_token()}")
     
@@ -980,15 +988,20 @@ class Parser:
                 field_name = self._advance()
                 if field_name.type != TokenType.IDENTIFIER:
                     raise SyntaxError("Esperado nome do campo após '.'")
-                
+
                 if isinstance(expr, IdentifierNode):
                     # Acesso direto a campo: pessoa.campo
                     expr = StructAccessNode(expr.name, field_name.value)
                 elif isinstance(expr, StructAccessNode):
                     # Acesso aninhado: pessoa.endereco.rua
-                    # Criar um nome composto para representar o caminho completo
                     full_path = f"{expr.field_name}.{field_name.value}"
                     expr = StructAccessNode(expr.struct_name, full_path)
+                elif isinstance(expr, ArrayAccessNode):
+                    # Acesso: pessoas[i].campo (armazenar caminho como string)
+                    expr = StructAccessFromArrayNode(expr, field_name.value)
+                elif isinstance(expr, StructAccessFromArrayNode):
+                    # Aninhar caminho: pessoas[i].endereco.rua
+                    expr = StructAccessFromArrayNode(expr.base_access, f"{expr.field_path}.{field_name.value}")
                 else:
                     raise SyntaxError("Acesso a campo de struct inválido")
             elif self._match(TokenType.LPAREN):
@@ -1480,7 +1493,12 @@ class LLVMCodeGenerator:
         if hasattr(self, 'global_runtime_inits'):
             for init_node in self.global_runtime_inits:
                 # Gerar o valor da chamada de função
-                value = self._generate_expression(init_node.value)
+                expected_ptr_for_array = None
+                tgt_type = self.type_map.get(init_node.identifier)
+                if isinstance(tgt_type, ArrayType):
+                    elem_ll = self._convert_type(tgt_type.element_type)
+                    expected_ptr_for_array = elem_ll.as_pointer()
+                value = self._generate_expression(init_node.value, expected_ptr_for_array)
                 gv = self.global_vars[init_node.identifier]
                 target_type = self.type_map.get(init_node.identifier)
                 # Se for array global, copiar elementos em vez de dar store do ponteiro
@@ -1490,10 +1508,18 @@ class LLVMCodeGenerator:
                     dst_elem_ptr = self.builder.gep(gv, [zero32, zero32], inbounds=True)
                     num = target_type.size or 0
                     if num > 0:
+                        # Se o elemento é struct, precisamos ajustar os tipos antes de copiar
+                        is_struct_elem = isinstance(target_type.element_type, StructType)
+                        src_base_ptr = value
+                        # Garante que source seja ponteiro do mesmo tipo do destino
+                        if isinstance(value.type, _ir.PointerType) and value.type != dst_elem_ptr.type:
+                            src_base_ptr = self.builder.bitcast(value, dst_elem_ptr.type)
                         for i in range(num):
-                            src_ptr = self.builder.gep(value, [self.int_type(i)], inbounds=True)
+                            src_ptr = self.builder.gep(src_base_ptr, [self.int_type(i)], inbounds=True)
                             src_val = self.builder.load(src_ptr)
                             dst_ptr = self.builder.gep(dst_elem_ptr, [self.int_type(i)], inbounds=True)
+                            if is_struct_elem and isinstance(src_val.type, _ir.PointerType) and isinstance(dst_ptr.type.pointee, _ir.PointerType) and src_val.type != dst_ptr.type.pointee:
+                                src_val = self.builder.bitcast(src_val, dst_ptr.type.pointee)
                             self.builder.store(src_val, dst_ptr)
                 elif isinstance(target_type, StringType) or isinstance(target_type, StrType):
                     # Strings globais em runtime: apenas store do ponteiro retornado
@@ -2905,7 +2931,51 @@ class LLVMCodeGenerator:
         elif isinstance(node, ArrayNode):
             # Alocar memória para o array
             num_elements = len(node.elements)
-            if isinstance(node.element_type, IntType):
+
+            # Preferir tipo esperado (quando inicializando arrays globais ou contexto conhecido)
+            inferred_from_expected = False
+            element_ptr_type = None
+            if expected_type is not None and isinstance(expected_type, ir.PointerType):
+                element_ptr_type = expected_type
+                inferred_from_expected = True
+
+            if inferred_from_expected:
+                # Determinar caminho com base no tipo apontado
+                pointee = element_ptr_type.pointee
+                # Tamanho por elemento para ponteiros e tipos escalares
+                if isinstance(pointee, ir.IntType) and pointee.width == 64:
+                    elem_size = 8
+                    array_size = ir.Constant(self.int_type, num_elements * elem_size)
+                    array_ptr = self.builder.call(self.malloc, [array_size])
+                    self._track_allocation(array_ptr)
+                    typed_ptr = self.builder.bitcast(array_ptr, element_ptr_type)
+                elif isinstance(pointee, ir.DoubleType):
+                    elem_size = 8
+                    array_size = ir.Constant(self.int_type, num_elements * elem_size)
+                    array_ptr = self.builder.call(self.malloc, [array_size])
+                    self._track_allocation(array_ptr)
+                    typed_ptr = self.builder.bitcast(array_ptr, element_ptr_type)
+                elif isinstance(pointee, ir.IntType) and pointee.width == 1:
+                    elem_size = 1
+                    array_size = ir.Constant(self.int_type, num_elements * elem_size)
+                    array_ptr = self.builder.call(self.malloc, [array_size])
+                    self._track_allocation(array_ptr)
+                    typed_ptr = self.builder.bitcast(array_ptr, element_ptr_type)
+                elif isinstance(pointee, ir.PointerType):
+                    # Ponteiro para ponteiro (ex.: struct** ou i8** para strings)
+                    elem_size = 8
+                    array_size = ir.Constant(self.int_type, num_elements * elem_size)
+                    array_ptr = self.builder.call(self.malloc, [array_size])
+                    self._track_allocation(array_ptr)
+                    typed_ptr = self.builder.bitcast(array_ptr, element_ptr_type)
+                else:
+                    # Fallback simples
+                    elem_size = 8
+                    array_size = ir.Constant(self.int_type, num_elements * elem_size)
+                    array_ptr = self.builder.call(self.malloc, [array_size])
+                    self._track_allocation(array_ptr)
+                    typed_ptr = array_ptr
+            elif isinstance(node.element_type, IntType):
                 elem_size = 8
                 array_size = ir.Constant(self.int_type, num_elements * elem_size)
                 array_ptr = self.builder.call(self.malloc, [array_size])
@@ -2930,6 +3000,19 @@ class LLVMCodeGenerator:
                 array_ptr = self.builder.call(self.malloc, [array_size])
                 self._track_allocation(array_ptr)
                 typed_ptr = self.builder.bitcast(array_ptr, self.bool_type.as_pointer())
+            elif isinstance(node.element_type, StructType):
+                # Array de ponteiros para structs: armazenar como <Struct*>*
+                elem_size = 8  # ponteiro de 64 bits
+                array_size = ir.Constant(self.int_type, num_elements * elem_size)
+                array_ptr = self.builder.call(self.malloc, [array_size])
+                self._track_allocation(array_ptr)
+                # Recuperar o tipo LLVM do struct
+                struct_name = node.element_type.name
+                if struct_name not in self.struct_types:
+                    raise NameError(f"Struct '{struct_name}' não definido")
+                struct_lltype = self.struct_types[struct_name]
+                elem_ptr_ty = struct_lltype.as_pointer()
+                typed_ptr = self.builder.bitcast(array_ptr, elem_ptr_ty.as_pointer())
             else:
                 elem_size = 1
                 array_size = ir.Constant(self.int_type, num_elements * elem_size)
@@ -2940,7 +3023,43 @@ class LLVMCodeGenerator:
             # Inicializar elementos
             for i, elem in enumerate(node.elements):
                 value = self._generate_expression(elem)
-                if isinstance(node.element_type, StringType) or isinstance(node.element_type, StrType):
+                if inferred_from_expected:
+                    pointee = element_ptr_type.pointee
+                    elem_ptr = self.builder.gep(typed_ptr, [ir.Constant(self.int_type, i)], inbounds=True)
+                    # Inteiros
+                    if isinstance(pointee, ir.IntType) and pointee.width == 64:
+                        if value.type != self.int_type:
+                            # Tentar converter numérico
+                            if isinstance(value.type, ir.DoubleType):
+                                value = self.builder.fptosi(value, self.int_type)
+                            elif isinstance(value.type, ir.IntType):
+                                value = self.builder.sext(value, self.int_type) if value.type.width < 64 else value
+                            else:
+                                value = self.builder.bitcast(value, self.int_type)
+                        self.builder.store(value, elem_ptr)
+                    # Doubles
+                    elif isinstance(pointee, ir.DoubleType):
+                        if value.type != self.float_type:
+                            if isinstance(value.type, ir.IntType):
+                                value = self.builder.sitofp(value, self.float_type)
+                            else:
+                                value = self.builder.bitcast(value, self.float_type)
+                        self.builder.store(value, elem_ptr)
+                    # Bool
+                    elif isinstance(pointee, ir.IntType) and pointee.width == 1:
+                        if value.type != self.bool_type:
+                            value = self.builder.icmp_ne(value, ir.Constant(value.type, 0)) if hasattr(value.type, 'width') else value
+                        self.builder.store(value, elem_ptr)
+                    # Ponteiros (string i8* ou struct*)
+                    elif isinstance(pointee, ir.PointerType):
+                        # Ajustar valor para o tipo esperado
+                        if isinstance(value.type, ir.PointerType) and value.type != pointee:
+                            value = self.builder.bitcast(value, pointee)
+                        self.builder.store(value, elem_ptr)
+                    else:
+                        # Fallback
+                        self.builder.store(value, elem_ptr)
+                elif isinstance(node.element_type, StringType) or isinstance(node.element_type, StrType):
                     value = self.builder.bitcast(value, self.char_type.as_pointer())
                     elem_ptr = self.builder.gep(typed_ptr, [ir.Constant(self.int_type, i)], inbounds=True)
                     # Forçar o ponteiro do elemento para i8** explicitamente
@@ -2952,6 +3071,18 @@ class LLVMCodeGenerator:
                     if value.type != self.bool_type:
                         value = self.builder.icmp_ne(value, ir.Constant(value.type, 0))
                     self.builder.store(value, elem_ptr)
+                elif isinstance(node.element_type, StructType):
+                    # Guardar ponteiro para struct como <Struct*>
+                    elem_ptr = self.builder.gep(typed_ptr, [ir.Constant(self.int_type, i)], inbounds=True)
+                    # Gerar valor do elemento e garantir que é ponteiro para struct correto
+                    struct_lltype = self.struct_types[node.element_type.name]
+                    expected_ptr_ty = struct_lltype.as_pointer()
+                    value_cast = value
+                    # Se veio struct por valor, garantir que é ponteiro (construtor retorna ponteiro)
+                    if hasattr(value, 'type') and isinstance(value.type, ir.PointerType):
+                        if value.type != expected_ptr_ty:
+                            value_cast = self.builder.bitcast(value, expected_ptr_ty)
+                    self.builder.store(value_cast, elem_ptr)
                 else:
                     elem_ptr = self.builder.gep(typed_ptr, [ir.Constant(self.int_type, i)], inbounds=True)
                     self.builder.store(value, elem_ptr)
@@ -3238,6 +3369,92 @@ class LLVMCodeGenerator:
                 elem_ptr = self.builder.gep(array_ptr, [index], inbounds=True)
                 return self.builder.load(elem_ptr)
             
+        elif isinstance(node, StructAccessFromArrayNode):
+            # Gerar o ponteiro/valor do elemento do array
+            base = node.base_access
+            # Reaproveitar caminho de acesso a array (similar ao caso ArrayAccessNode simples)
+            if base.array_name in self.local_vars:
+                var = self.local_vars[base.array_name]
+            elif base.array_name in self.global_vars:
+                var = self.global_vars[base.array_name]
+            else:
+                raise NameError(f"Array '{base.array_name}' não definido")
+            index = self._generate_expression(base.index)
+            if isinstance(var, ir.Argument) and isinstance(var.type, ir.PointerType):
+                array_ptr = var
+            elif isinstance(var, ir.GlobalVariable) and isinstance(var.type.pointee, ir.ArrayType):
+                zero = ir.Constant(ir.IntType(32), 0)
+                array_ptr = self.builder.gep(var, [zero, zero], inbounds=True)
+            else:
+                if isinstance(var.type, ir.PointerType) and isinstance(var.type.pointee, ir.ArrayType):
+                    zero = ir.Constant(ir.IntType(32), 0)
+                    array_ptr = self.builder.gep(var, [zero, zero], inbounds=True)
+                else:
+                    # Verificar se é uma referência para array
+                    if (base.array_name in self.type_map and 
+                        isinstance(self.type_map[base.array_name], ReferenceType)):
+                        array_ptr = self.builder.load(var)
+                        if isinstance(array_ptr.type, ir.PointerType) and isinstance(array_ptr.type.pointee, ir.ArrayType):
+                            zero = ir.Constant(ir.IntType(32), 0)
+                            array_ptr = self.builder.gep(array_ptr, [zero, zero], inbounds=True)
+                    else:
+                        array_ptr = self.builder.load(var)
+                        if isinstance(array_ptr.type, ir.ArrayType):
+                            zero = ir.Constant(ir.IntType(32), 0)
+                            array_ptr = self.builder.gep(array_ptr, [zero, zero], inbounds=True)
+
+            # Ponteiro para o elemento
+            elem_ptr = self.builder.gep(array_ptr, [index], inbounds=True)
+            # Carregar ponteiro para struct armazenado no array
+            struct_ptr = self.builder.load(elem_ptr)
+
+            # Descobrir tipo do struct via tipo do array em type_map
+            struct_name = None
+            if base.array_name in self.type_map and isinstance(self.type_map[base.array_name], ArrayType):
+                elem_type = self.type_map[base.array_name].element_type
+                if isinstance(elem_type, StructType):
+                    struct_name = elem_type.name
+                elif isinstance(elem_type, ReferenceType) and isinstance(elem_type.target_type, StructType):
+                    struct_name = elem_type.target_type.name
+            if not struct_name or struct_name not in self.struct_fields:
+                # Fallback: tratar como ponteiro para void, apenas retornar ponteiro
+                return struct_ptr
+
+            # Cast para o tipo correto do struct
+            if struct_name in self.struct_types:
+                struct_lltype = self.struct_types[struct_name]
+                struct_ptr = self.builder.bitcast(struct_ptr, struct_lltype.as_pointer())
+
+            # Navegar nos campos conforme field_path
+            current_ptr = struct_ptr
+            current_struct_type = struct_name
+            for i, field_name in enumerate(node.field_path.split('.')):
+                if current_struct_type not in self.struct_fields or field_name not in self.struct_fields[current_struct_type]:
+                    raise NameError(f"Campo '{field_name}' não encontrado em struct '{current_struct_type}'")
+                field_index = self.struct_fields[current_struct_type][field_name]
+                # Acessar o campo
+                field_ptr = self.builder.gep(current_ptr, [ir.Constant(ir.IntType(32), 0), ir.Constant(ir.IntType(32), field_index)])
+                if i < len(node.field_path.split('.')) - 1:
+                    # Avançar para struct interno
+                    next_type = None
+                    if hasattr(self, 'struct_field_types') and current_struct_type in self.struct_field_types:
+                        next_type = self.struct_field_types[current_struct_type][field_name]
+                    if isinstance(next_type, StructType):
+                        current_struct_type = next_type.name
+                        current_ptr = field_ptr
+                    elif isinstance(next_type, ReferenceType) and isinstance(next_type.target_type, StructType):
+                        current_struct_type = next_type.target_type.name
+                        loaded = self.builder.load(field_ptr)
+                        if current_struct_type in self.struct_types:
+                            current_ptr = self.builder.bitcast(loaded, self.struct_types[current_struct_type].as_pointer())
+                        else:
+                            current_ptr = loaded
+                    else:
+                        raise NameError(f"Campo '{field_name}' não é um struct")
+                else:
+                    # Último campo: retornar valor carregado
+                    return self.builder.load(field_ptr)
+
         elif isinstance(node, IdentifierNode):
             # Procurar variável primeiro localmente, depois globalmente
             if node.name in self.local_vars:
