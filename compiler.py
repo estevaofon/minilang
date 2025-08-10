@@ -1501,7 +1501,11 @@ class LLVMCodeGenerator:
                         value = self.builder.bitcast(value, self.string_type)
                     self.builder.store(value, gv)
                 else:
-                    # Escalares: armazenar diretamente
+                    # Escalares e referências: ajustar ponteiros quando necessário
+                    if isinstance(target_type, ReferenceType):
+                        expected_ptr_ty = self._convert_type(target_type)
+                        if isinstance(value.type, _ir.PointerType) and value.type != expected_ptr_ty:
+                            value = self.builder.bitcast(value, expected_ptr_ty)
                     self.builder.store(value, gv)
         
         # Processar todos os statements (exceto definições de função) na ordem original
