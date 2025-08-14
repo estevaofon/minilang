@@ -596,6 +596,141 @@ assert(frase == "olatodomundo", "String resultante deve ser olatodomundo")
 // ============================================
 // FINALIZAÇÃO DOS TESTES
 // ============================================
+// ============================================
+// 20. CENÁRIOS ESSENCIAIS ADICIONAIS
+// ============================================
+print(">> 20. CENÁRIOS ESSENCIAIS ADICIONAIS")
+
+// 20.1 Acesso a caractere em string (índices constantes)
+assert("ABC"[0] == "A", "Primeiro caractere de 'ABC' deve ser 'A'")
+assert("ABC"[2] == "C", "Terceiro caractere de 'ABC' deve ser 'C'")
+
+// 20.2 Função ord em string literal (pega primeiro caractere)
+assert(ord("AZ") == 65, "ord('AZ') deve retornar 65 (caractere 'A')")
+
+// 20.3 Módulo de float (fmod)
+assert(5.5 % 2.0 == 1.5, "5.5 % 2.0 deve ser 1.5")
+
+// 20.4 Conversões numéricas básicas
+assert(to_int(3.99) == 3, "to_int(3.99) deve ser 3")
+assert(to_float(3) == 3.0, "to_float(3) deve ser 3.0")
+
+// 20.5 Passagem de array estático para função (conversão automática p/ ponteiro)
+func soma_array(arr: int[], n: int) -> int
+    let s: int = 0
+    let i2: int = 0
+    while i2 < n do
+        s = s + arr[i2]
+        i2 = i2 + 1
+    end
+    return s
+end
+let arrx: int[4] = [1, 2, 3, 4]
+assert(soma_array(arrx, 4) == 10, "soma_array([1,2,3,4]) deve ser 10")
+
+// 20.6 Modificação de array em função (efeito colateral esperado)
+func inc_primeiro(arr: int[], n: int) -> void
+    arr[0] = arr[0] + n
+end
+let arrm: int[2] = [5, 0]
+inc_primeiro(arrm, 3)
+assert(arrm[0] == 8, "Primeiro elemento deve ser incrementado para 8")
+
+// 20.7 Atribuição aninhada em structs
+struct Endereco
+    rua: string,
+    numero: int
+end
+struct Pessoa2
+    nome: string,
+    endereco: Endereco
+end
+let p2: Pessoa2 = Pessoa2("X", Endereco("Y", 1))
+p2.endereco.rua = "Z"
+assert(p2.endereco.rua == "Z", "Campo aninhado rua deve ser 'Z'")
+
+// 20.8 Comparação com null em campos de referência
+// Reutiliza Node definido anteriormente
+assert(node1.proximo == null, "Campo 'proximo' inicialmente deve ser null")
+
+// 20.9 Somente parte inteira em divisão inteira
+assert(7 / 2 == 3, "7 / 2 deve ser 3 (divisão inteira)")
+
+// 20.10 zeros() com float e length() em arrays
+let zf: float[2] = zeros(2)
+assert(zf[0] == 0.0, "zeros(2) float deve iniciar com 0.0")
+assert(length(zf) == 2, "length(zf) deve ser 2")
+
+// 20.11 Array dentro de struct e acesso/modificação
+struct Bag
+    valores: int[3]
+end
+let base_vals: int[3] = [0, 0, 0]
+let bag: Bag = Bag(base_vals)
+bag.valores[1] = 7
+assert(bag.valores[1] == 7, "Elemento do array dentro do struct deve ser 7")
+
+// 20.12 to_str em array (conversão para string)
+let ai_conv: int[3] = [1, 2, 3]
+let str_ai: string = to_str(ai_conv)
+assert(str_ai == "[", "to_str(array) deve iniciar com '['")
+
+// 20.13 Comparação de strings distintas (primeiro caractere)
+assert("A" != "B", "Strings diferentes devem ser !=")
+
+// 20.14 Escopo: sombreamento de variável global por local
+global gg: int = 5
+func sombra() -> int
+    let gg: int = 10
+    return gg
+end
+let rg: int = sombra()
+assert(rg == 10, "Função deve retornar variável local (10)")
+assert(gg == 5, "Global gg deve permanecer 5")
+
+// 20.15 break em loop
+let bi: int = 0
+while bi < 10 do
+    if bi == 3 then
+        break
+    end
+    bi = bi + 1
+end
+assert(bi == 3, "Loop deve interromper em bi == 3")
+
+
+// ============================================
+// 21. ARRAY DE STRUCTS
+// ============================================
+print(">> 21. ARRAY DE STRUCTS")
+
+struct PessoaAoS
+    id: int,
+    nome: string
+end
+
+let a1: PessoaAoS = PessoaAoS(10, "Ana")
+let a2: PessoaAoS = PessoaAoS(20, "Bruno")
+let a3: PessoaAoS = PessoaAoS(30, "Carla")
+
+let pessoas_arr: PessoaAoS[3] = [a1, a2, null]
+
+// Leitura via índice e acesso de campo
+assert(pessoas_arr[0].id == 10, "pessoas_arr[0].id deve ser 10")
+assert(pessoas_arr[1].nome == "Bruno", "pessoas_arr[1].nome deve ser 'Bruno'")
+
+// Atualização de elemento
+pessoas_arr[2] = a3
+assert(pessoas_arr[2].id == 30, "pessoas_arr[2].id deve ser 30")
+assert(pessoas_arr[2].nome == "Carla", "pessoas_arr[2].nome deve ser 'Carla'")
+
+// Reatribuição
+let a4: PessoaAoS = PessoaAoS(40, "Dora")
+pessoas_arr[1] = a4
+assert(pessoas_arr[1].id == 40, "pessoas_arr[1].id deve ser 40")
+assert(pessoas_arr[1].nome == "Dora", "pessoas_arr[1].nome deve ser 'Dora'")
+
+
 print(">> FINALIZAÇÃO DOS TESTES")
 
 // Executar resumo final
