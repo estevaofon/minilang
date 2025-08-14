@@ -26,12 +26,14 @@ end
 
 
 func peek(node: ref Node) -> int
-    while node != null do
-        if node.proximo == null then
-            return node.valor
-        end
+    if node == null | node.proximo == null then
+        return -1
+    end
+    node = node.proximo
+    while node.proximo != null do
         node = node.proximo
     end
+    return node.valor
 end
 
 
@@ -52,11 +54,17 @@ func pop_front(head: ref Node) -> int
     head.proximo = head.proximo.proximo
     return valor
 end
+
+
+func is_empty(node: ref Node) -> bool
+    return node == null | node.proximo == null
+end
     
 
-let no1: Node = Node(10, null)
+let no1: Node = Node(0, null)
 
 func print_list(node: ref Node)
+    node = node.proximo
     while node != null do
         print(to_str(node.valor))
         node = node.proximo
@@ -74,7 +82,6 @@ end
 
 stack_push(20)
 stack_push(30)
-stack_push(40)
 print_list(no1)
 print("apos pop")
 stack_pop()
@@ -84,3 +91,11 @@ print("Topo da pilha "+to_str(topo))
 stack_pop()
 let topo: int = peek(no1)
 print("Topo da pilha "+to_str(topo))
+stack_pop()
+let topo: int = peek(no1)
+print("Topo da pilha "+to_str(topo))
+if is_empty(no1) then
+    print("Pilha vazia")
+else
+    print("Pilha não está vazia")
+end

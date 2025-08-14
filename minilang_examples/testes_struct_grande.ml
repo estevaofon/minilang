@@ -1,5 +1,5 @@
 // Função assert para validação automática
-func assert(condicao: bool, mensagem: str) -> void
+func assert(condicao: bool, mensagem: string) -> void
     if condicao then
         print("✓ Teste passou: ")
         print(mensagem)
@@ -11,21 +11,21 @@ end
 
 struct ProdutoGrande
     codigo: int,
-    nome: str,
+    nome: string,
     preco: float,
     disponivel: bool,
     quantidade: int,
-    categoria: str,
+    categoria: string,
     peso: float,
     promocao: bool,
     vendas: int,
-    fornecedor: str
+    fornecedor: string
 end
 
 struct Cliente
     id: int,
-    nome: str,
-    email: str,
+    nome: string,
+    email: string,
     ativo: bool,
     credito: float
 end

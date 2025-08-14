@@ -4409,6 +4409,16 @@ class LLVMCodeGenerator:
                         di = self.builder.gep(dst_elem_ptr, [idx_const], inbounds=True)
                         self.builder.store(self.builder.load(si), di)
                     continue
+
+                # Novo: se o campo é um struct embutido e o argumento veio como ponteiro para struct,
+                # carregamos o valor do ponteiro (fazendo bitcast se o pointee divergir) e armazenamos por valor.
+                if isinstance(target_ty, _ir.LiteralStructType):
+                    if isinstance(arg_value.type, _ir.PointerType) and isinstance(arg_value.type.pointee, _ir.LiteralStructType):
+                        if arg_value.type.pointee != target_ty:
+                            arg_value = self.builder.bitcast(arg_value, target_ty.as_pointer())
+                        loaded_struct = self.builder.load(arg_value)
+                        self.builder.store(loaded_struct, field_ptr)
+                        continue
                 if arg_value.type != target_ty:
                     if isinstance(arg_value.type, ir.PointerType) and isinstance(target_ty, ir.PointerType):
                         arg_value = self.builder.bitcast(arg_value, target_ty)
