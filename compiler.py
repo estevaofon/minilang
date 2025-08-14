@@ -1437,8 +1437,7 @@ class LLVMCodeGenerator:
     def generate(self, ast: ProgramNode):
         # Armazenar AST global
         self.global_ast = ast
-        # Rastreador para pular a primeira declaração global na geração de statements
-        self._seen_first_global_let: set[str] = set()
+        # Geração preservará a ordem textual dos statements do topo
         
         # Primeiro, processar definições de struct para criar os tipos LLVM
         for stmt in ast.statements:
@@ -1487,62 +1486,9 @@ class LLVMCodeGenerator:
         if sys.platform == "win32":
             self._setup_windows_utf8()
         
-        # Não antecipe atribuições locais: gerar statements na ordem original
-        
-        # Depois, inicializar variáveis globais com chamadas de função
-        if hasattr(self, 'global_runtime_inits'):
-            for init_node in self.global_runtime_inits:
-                # Gerar o valor da chamada de função
-                expected_ptr_for_array = None
-                tgt_type = self.type_map.get(init_node.identifier)
-                if isinstance(tgt_type, ArrayType):
-                    elem_ll = self._convert_type(tgt_type.element_type)
-                    expected_ptr_for_array = elem_ll.as_pointer()
-                value = self._generate_expression(init_node.value, expected_ptr_for_array)
-                gv = self.global_vars[init_node.identifier]
-                target_type = self.type_map.get(init_node.identifier)
-                # Se for array global, copiar elementos em vez de dar store do ponteiro
-                from llvmlite import ir as _ir
-                if isinstance(target_type, ArrayType):
-                    zero32 = _ir.IntType(32)(0)
-                    dst_elem_ptr = self.builder.gep(gv, [zero32, zero32], inbounds=True)
-                    num = target_type.size or 0
-                    if num > 0:
-                        # Se o elemento é struct, precisamos ajustar os tipos antes de copiar
-                        is_struct_elem = isinstance(target_type.element_type, StructType)
-                        src_base_ptr = value
-                        # Garante que source seja ponteiro do mesmo tipo do destino
-                        if isinstance(value.type, _ir.PointerType) and value.type != dst_elem_ptr.type:
-                            src_base_ptr = self.builder.bitcast(value, dst_elem_ptr.type)
-                        for i in range(num):
-                            src_ptr = self.builder.gep(src_base_ptr, [self.int_type(i)], inbounds=True)
-                            src_val = self.builder.load(src_ptr)
-                            dst_ptr = self.builder.gep(dst_elem_ptr, [self.int_type(i)], inbounds=True)
-                            if is_struct_elem and isinstance(src_val.type, _ir.PointerType) and isinstance(dst_ptr.type.pointee, _ir.PointerType) and src_val.type != dst_ptr.type.pointee:
-                                src_val = self.builder.bitcast(src_val, dst_ptr.type.pointee)
-                            self.builder.store(src_val, dst_ptr)
-                elif isinstance(target_type, StringType) or isinstance(target_type, StrType):
-                    # Strings globais em runtime: apenas store do ponteiro retornado
-                    if isinstance(value.type, _ir.PointerType) and value.type.pointee != self.char_type:
-                        value = self.builder.bitcast(value, self.string_type)
-                    self.builder.store(value, gv)
-                else:
-                    # Escalares e referências: ajustar ponteiros quando necessário
-                    if isinstance(target_type, ReferenceType):
-                        expected_ptr_ty = self._convert_type(target_type)
-                        if isinstance(value.type, _ir.PointerType) and value.type != expected_ptr_ty:
-                            value = self.builder.bitcast(value, expected_ptr_ty)
-                    self.builder.store(value, gv)
-        
         # Processar todos os statements (exceto definições de função) na ordem original
         for stmt in ast.statements:
             if not isinstance(stmt, FunctionNode):
-                # Evitar duplicar inicialização de globais
-                if isinstance(stmt, AssignmentNode) and stmt.is_global:
-                    # Pular a primeira ocorrência (já inicializada via initializer ou global_init_calls)
-                    if stmt.identifier not in self._seen_first_global_let:
-                        self._seen_first_global_let.add(stmt.identifier)
-                        continue
                 self._generate_statement(stmt)
         
         # Adicionar limpeza de memória antes do return
@@ -1745,8 +1691,8 @@ class LLVMCodeGenerator:
             raise Exception(f"Valor inicial de global não suportado: {node}")
 
     def _declare_global_variable(self, node: AssignmentNode):
-        """Declara uma variável global com valor neutro e agenda a
-        inicialização em tempo de execução (no início de main) se houver valor."""
+        """Declara uma variável global com valor neutro.
+        A inicialização em tempo de execução ocorrerá em ordem textual via geração normal de statements."""
         # Evitar redefinição de globais com o mesmo nome
         if node.identifier in self.global_vars:
             # Se já existe, validar tipo (quando disponível) e ignorar nova declaração
@@ -1759,11 +1705,9 @@ class LLVMCodeGenerator:
             return
         var_type = self._convert_type(node.var_type)
         
-        # Verificar se o valor é uma chamada de função
-        is_function_call = isinstance(node.value, CallNode)
+        # Não agendar chamadas para execução antecipada
         
         # Criar variável global com valor neutro (zero/null)
-        is_nonconstant_runtime_init = node.value is not None
         if isinstance(node.var_type, ArrayType):
             # Arrays estáticos: inicializar zerados
             element_lltype = self._convert_type(node.var_type.element_type)
@@ -1787,11 +1731,7 @@ class LLVMCodeGenerator:
         self.global_vars[node.identifier] = gv
         self.type_map[node.identifier] = node.var_type
         
-        # Se há valor (inclusive chamadas), agendar inicialização em runtime
-        if is_function_call or is_nonconstant_runtime_init:
-            if not hasattr(self, 'global_runtime_inits'):
-                self.global_runtime_inits = []
-            self.global_runtime_inits.append(node)
+        # Não usar global_runtime_inits; inicialização acontecerá no fluxo normal
     
     def _declare_function(self, node: FunctionNode):
         # Converter tipos dos parâmetros com tratamento especial para referências
@@ -2002,10 +1942,63 @@ class LLVMCodeGenerator:
         # Tratar como global apenas se for declaração (tem tipo) E já existir em self.global_vars
         is_declared_global = (node.is_global and node.var_type is not None and node.identifier in self.global_vars)
         if is_declared_global:
-            expected_ty = self._convert_type(node.var_type) if node.var_type is not None else None
-            value = self._generate_expression(node.value, expected_ty)
-            self.builder.store(value, self.global_vars[node.identifier])
-            return
+            target_type = node.var_type
+            gv = self.global_vars[node.identifier]
+            # Arrays globais precisam de cópia elemento a elemento
+            if isinstance(target_type, ArrayType):
+                # Gerar valor como ponteiro para elementos quando possível
+                element_ll = self._convert_type(target_type.element_type)
+                value = self._generate_expression(node.value, element_ll.as_pointer())
+                # Obter ponteiro para primeiro elemento do array global
+                zero32 = ir.IntType(32)(0)
+                dst_elem_ptr = self.builder.gep(gv, [zero32, zero32], inbounds=True)
+                # Copiar elementos
+                num = target_type.size or 0
+                for i in range(num):
+                    idx_const = self.int_type(i)
+                    src_ptr = self.builder.gep(value, [idx_const], inbounds=True)
+                    src_val = self.builder.load(src_ptr)
+                    dst_ptr = self.builder.gep(dst_elem_ptr, [idx_const], inbounds=True)
+                    # Ajustar tipo se necessário
+                    if src_val.type != dst_ptr.type.pointee:
+                        try:
+                            if hasattr(src_val.type, 'width') and hasattr(dst_ptr.type.pointee, 'width'):
+                                if src_val.type.width < dst_ptr.type.pointee.width:
+                                    src_val = self.builder.sext(src_val, dst_ptr.type.pointee)
+                                elif src_val.type.width > dst_ptr.type.pointee.width:
+                                    src_val = self.builder.trunc(src_val, dst_ptr.type.pointee)
+                                else:
+                                    src_val = self.builder.bitcast(src_val, dst_ptr.type.pointee)
+                            else:
+                                src_val = self.builder.bitcast(src_val, dst_ptr.type.pointee)
+                        except Exception:
+                            pass
+                    self.builder.store(src_val, dst_ptr)
+                return
+            # Strings globais: apenas armazenar ponteiro (ajustando tipo)
+            elif isinstance(target_type, StringType) or isinstance(target_type, StrType):
+                value = self._generate_expression(node.value)
+                if isinstance(value.type, ir.PointerType) and value.type.pointee != self.char_type:
+                    value = self.builder.bitcast(value, self.string_type)
+                self.builder.store(value, gv)
+                return
+            # Referências globais: ajustar cast de ponteiro conforme necessário
+            elif isinstance(target_type, ReferenceType):
+                expected_ptr_ty = self._convert_type(target_type)
+                value = self._generate_expression(node.value)
+                if isinstance(value.type, ir.PointerType) and value.type != expected_ptr_ty:
+                    value = self.builder.bitcast(value, expected_ptr_ty)
+                elif isinstance(value.type, ir.IntType) and value.type.width == 64:
+                    # null literal para referência
+                    value = ir.Constant(expected_ptr_ty, None)
+                self.builder.store(value, gv)
+                return
+            else:
+                # Tipos escalares
+                expected_ty = self._convert_type(target_type)
+                value = self._generate_expression(node.value, expected_ty)
+                self.builder.store(value, gv)
+                return
         else:
             # Variável local ou reatribuição
             # Configurar tipo de struct atual para geração de valores null
@@ -2024,9 +2017,52 @@ class LLVMCodeGenerator:
                 if node.identifier in self.local_vars:
                     self.builder.store(value, self.local_vars[node.identifier])
                 elif node.identifier in self.global_vars:
-                    # Permitir reatribuição de globais em qualquer escopo;
-                    # locais têm precedência via self.local_vars acima
-                    self.builder.store(value, self.global_vars[node.identifier])
+                    # Reatribuição de global: tratar arrays e strings especificamente
+                    gv = self.global_vars[node.identifier]
+                    target_type = self.type_map.get(node.identifier)
+                    if isinstance(target_type, ArrayType):
+                        # Copiar elementos para array global
+                        zero32 = ir.IntType(32)(0)
+                        dst_elem_ptr = self.builder.gep(gv, [zero32, zero32], inbounds=True)
+                        # Se value for ponteiro para elementos, copiar diretamente
+                        src_ptr_base = value
+                        if not isinstance(value.type, ir.PointerType):
+                            # Tentar interpretar como ponteiro para elementos esperados
+                            elem_ll = self._convert_type(target_type.element_type)
+                            src_ptr_base = self.builder.bitcast(value, elem_ll.as_pointer())
+                        num = target_type.size or 0
+                        for i in range(num):
+                            idx_const = self.int_type(i)
+                            src_ptr = self.builder.gep(src_ptr_base, [idx_const], inbounds=True)
+                            src_val = self.builder.load(src_ptr)
+                            dst_ptr = self.builder.gep(dst_elem_ptr, [idx_const], inbounds=True)
+                            if src_val.type != dst_ptr.type.pointee:
+                                try:
+                                    if hasattr(src_val.type, 'width') and hasattr(dst_ptr.type.pointee, 'width'):
+                                        if src_val.type.width < dst_ptr.type.pointee.width:
+                                            src_val = self.builder.sext(src_val, dst_ptr.type.pointee)
+                                        elif src_val.type.width > dst_ptr.type.pointee.width:
+                                            src_val = self.builder.trunc(src_val, dst_ptr.type.pointee)
+                                        else:
+                                            src_val = self.builder.bitcast(src_val, dst_ptr.type.pointee)
+                                    else:
+                                        src_val = self.builder.bitcast(src_val, dst_ptr.type.pointee)
+                                except Exception:
+                                    pass
+                            self.builder.store(src_val, dst_ptr)
+                    elif isinstance(target_type, (StringType, StrType)):
+                        if isinstance(value.type, ir.PointerType) and value.type.pointee != self.char_type:
+                            value = self.builder.bitcast(value, self.string_type)
+                        self.builder.store(value, gv)
+                    elif isinstance(target_type, ReferenceType):
+                        expected_ptr_ty = self._convert_type(target_type)
+                        if isinstance(value.type, ir.PointerType) and value.type != expected_ptr_ty:
+                            value = self.builder.bitcast(value, expected_ptr_ty)
+                        elif isinstance(value.type, ir.IntType) and value.type.width == 64:
+                            value = ir.Constant(expected_ptr_ty, None)
+                        self.builder.store(value, gv)
+                    else:
+                        self.builder.store(value, gv)
                 else:
                     raise NameError(f"Variável '{node.identifier}' não definida")
             else:

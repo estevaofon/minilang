@@ -11,6 +11,20 @@ func append(node: ref Node, valor: int)
     end
 end
 
+
+func pop(node: ref Node) -> int
+    if node == null | node.proximo == null then
+        return -1
+    end
+    while node.proximo.proximo != null do
+        node = node.proximo
+    end
+    let valor: int = node.proximo.valor
+    node.proximo = null
+    return valor
+end
+    
+
 let no1: Node = Node(10, null)
 append(no1, 20)
 append(no1, 30)
@@ -23,10 +37,13 @@ append(no1, 90)
 append(no1, 100)
 
 func print_list(node: ref Node)
-    while node.proximo != null do
+    while node != null do
         print(to_str(node.valor))
-        node = ref node.proximo
+        node = node.proximo
     end
 end
 
+let v: int = pop(no1)
+pop(no1)
 print_list(no1)
+print("Valor retornado "+to_str(v))
