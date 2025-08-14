@@ -387,6 +387,30 @@ mini-language/
 - **String Concatenation**: `++`
 - **Reference**: `ref` (for creating references)
 
+### Quick guide: When to use `ref`
+
+- Use `ref` in struct fields to model self-references or cross-struct references
+- Use `ref` in function parameters when you need to mutate a struct passed by the caller
+- Use `ref` variables/return types when storing or returning pointers (and possibly `null`)
+- See `REF_README.md` for a focused guide with examples
+
+Example:
+
+```minilang
+struct Node
+    value: int,
+    next: ref Node
+end
+
+func append(node: ref Node, value: int)
+    if node.next == null then
+        node.next = ref Node(value, null)
+    else
+        append(node.next, value)
+    end
+end
+```
+
 ### Built-in Functions
 
 - `print(expression)` - Output values to console
