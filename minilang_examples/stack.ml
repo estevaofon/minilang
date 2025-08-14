@@ -25,6 +25,16 @@ func pop(node: ref Node) -> int
 end
 
 
+func peek(node: ref Node) -> int
+    while node != null do
+        if node.proximo == null then
+            return node.valor
+        end
+        node = node.proximo
+    end
+end
+
+
 func pop_front(head: ref Node) -> int
     if head == null then
         return -1
@@ -45,15 +55,6 @@ end
     
 
 let no1: Node = Node(10, null)
-append(no1, 20)
-append(no1, 30)
-append(no1, 40)
-append(no1, 50)
-append(no1, 60)
-append(no1, 70)
-append(no1, 80)
-append(no1, 90)
-append(no1, 100)
 
 func print_list(node: ref Node)
     while node != null do
@@ -62,10 +63,24 @@ func print_list(node: ref Node)
     end
 end
 
-let v: int = pop(no1)
-pop(no1)
+func stack_push(valor: int)
+    append(no1, valor)
+end
+
+func stack_pop() -> int
+    let i:int = pop(no1)
+    return i
+end
+
+stack_push(20)
+stack_push(30)
+stack_push(40)
 print_list(no1)
-print("Valor retornado "+to_str(v))
-let z: int = pop_front(no1)
-print("Valor retornado "+to_str(z))
+print("apos pop")
+stack_pop()
 print_list(no1)
+let topo: int = peek(no1)
+print("Topo da pilha "+to_str(topo))
+stack_pop()
+let topo: int = peek(no1)
+print("Topo da pilha "+to_str(topo))
