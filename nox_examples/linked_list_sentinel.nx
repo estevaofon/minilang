@@ -1,0 +1,30 @@
+struct Node
+    data: int,
+    next: ref Node
+end
+
+struct LinkedList
+    head: ref Node
+end
+
+let ll: LinkedList = LinkedList(null)
+
+func push_front(linked_list: LinkedList, value: int)
+    let inner_node: Node = Node(value, linked_list.head)
+    linked_list.head = ref inner_node
+end
+
+func print_items(ll: LinkedList)
+    let current: Node = ll.head
+    while current != null do
+        print(current.data)
+        current = ref current.next
+    end
+end
+
+push_front(ll, 40)
+push_front(ll, 30)
+push_front(ll, 20)
+push_front(ll, 10)
+print_items(ll)
+
