@@ -1,5 +1,5 @@
 // ============================================
-// IMPLEMENTAÇÃO DE ARRAY DINÂMICO EM MINILANG
+// IMPLEMENTAÇÃO DE ÁRVORE BINÁRIA EM NOX
 // ============================================
 
 // Definir a estrutura do array dinâmico
@@ -72,21 +72,39 @@ print("")
 print("=== ADICIONANDO ELEMENTOS ===")
 
 // Adicionar elementos
-adicionar_elemento(meu_array, 10)
-adicionar_elemento(meu_array, 25)
-adicionar_elemento(meu_array, 7)
-adicionar_elemento(meu_array, 42)
-adicionar_elemento(meu_array, 100)
-adicionar_elemento(meu_array, 200)
-adicionar_elemento(meu_array, 300)
-adicionar_elemento(meu_array, 400)
-adicionar_elemento(meu_array, 500)
-adicionar_elemento(meu_array, 600)
-adicionar_elemento(meu_array, 700)
-adicionar_elemento(meu_array, 800)
-adicionar_elemento(meu_array, 900)
-adicionar_elemento(meu_array, 1000)
+//adicionar_elemento(meu_array, 1000)
+//imprimir_array(meu_array)
 
+
+
+struct Node
+  data: int,
+  left: ref Node,
+  right: ref Node
+end
+
+// Formato mais sofisticado (múltiplos níveis)
+let root: Node = Node(1, null, null)
+root.left = Node(2, null, null)
+root.right = Node(3, null, null)
+root.left.left = Node(4, null, null)
+root.left.right = Node(5, null, null)
+
+// Desenho da arvore binaria em ASCII
+//     1
+//    / \
+//   2   3
+//  / \ 
+// 4   5 
+
+func pre_order(node: ref Node, array: ref DynamicArray) -> void
+  if node != null then
+    adicionar_elemento(array, node.data)
+    pre_order(node.left, array)
+    pre_order(node.right, array)
+  end
+end
+
+pre_order(root, meu_array)
+print("Pre-order traversal:")
 imprimir_array(meu_array)
-
-print("Elemento na posição 12: " + to_str(obter_elemento(meu_array, 12)))

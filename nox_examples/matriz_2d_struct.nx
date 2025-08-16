@@ -1,5 +1,5 @@
 // ============================================
-// IMPLEMENTAÇÃO DE MATRIZES 2D EM MINILANG
+// IMPLEMENTAÇÃO DE MATRIZES 2D EM NOX
 // Suporte para Matriz 100x10
 // ============================================
 
@@ -122,7 +122,7 @@ end
 // TESTES E DEMONSTRAÇÃO
 // ============================================
 
-print("=== IMPLEMENTAÇÃO DE MATRIZES 2D EM MINILANG ===")
+print("=== IMPLEMENTAÇÃO DE MATRIZES 2D EM NOX ===")
 print("Suporte para Matriz 100x10")
 print("")
 

@@ -1,5 +1,5 @@
 // ============================================
-// TESTES UNITÁRIOS AUTOMATIZADOS MINILANG v2.0
+// TESTES UNITÁRIOS AUTOMATIZADOS NOX
 // ============================================
 
 print("=== INICIANDO TESTES UNITÁRIOS AUTOMATIZADOS ===")
@@ -54,13 +54,13 @@ print(">> 1. TESTES DE TIPOS BÁSICOS")
 
 let numero: int = 42
 let decimal: float = 3.14
-let texto: string = "Hello MiniLang!"
+let texto: string = "Hello Nox!"
 let verdadeiro: bool = true
 let falso: bool = false
 
 assert(numero == 42, "Int deve ser 42")
 assert(decimal == 3.14, "Float deve ser 3.14")
-assert(texto == "Hello MiniLang!", "String deve ser 'Hello MiniLang!'")
+assert(texto == "Hello Nox!", "String deve ser 'Hello Nox!'")
 assert(verdadeiro == true, "Bool true deve ser true")
 assert(falso == false, "Bool false deve ser false")
 // Teste de null removido devido a limitação de tipos
@@ -574,10 +574,10 @@ let resultado_complexo: int = (10 + 5) * 2 - 3
 assert(resultado_complexo == 27, "Cálculo complexo deve ser 27")
 
 // Teste com strings complexas
-let nome: string = "MiniLang"
-let versao: string = "2.0"
+let nome: string = "Nox"
+let versao: string = "1.0"
 let mensagem: string = nome + " versão " + versao + " funcionando!"
-assert(mensagem == "MiniLang versão 2.0 funcionando!", "String complexa deve ser correta")
+assert(mensagem == "Nox versão 1.0 funcionando!", "String complexa deve ser correta")
 
 print("")
 
@@ -747,4 +747,4 @@ print("✓ Construtores com diferentes tipos funcionando")
 print("✓ Busca binária com arrays estáticos e dinâmicos funcionando")
 print("✓ Todas as operações básicas funcionando")
 print("")
-print("🎉 MINILANG V2.0 FUNCIONANDO COM SUCESSO!") 
+print("🎉 NOX FUNCIONANDO COM SUCESSO!") 

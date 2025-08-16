@@ -1,11 +1,11 @@
-# MiniLang JIT Interpreter - REPL (Read-Eval-Print Loop)
+# Nox JIT Interpreter - REPL (Read-Eval-Print Loop)
 
-Este documento descreve o REPL oficial para o MiniLang JIT Interpreter.
+Este documento descreve o REPL oficial para o Nox JIT Interpreter.
 
-## 🚀 REPL Oficial: `minilang_block_repl.py`
+## 🚀 REPL Oficial: `nox_repl.py`
 
 ### **Características Principais:**
-- ✅ **Sintaxe MiniLang correta**: `func/end`, `if/then/end`, `while/do/end`
+- ✅ **Sintaxe Nox correta**: `func/end`, `if/then/end`, `while/do/end`
 - ✅ **Estado persistente**: Mantém variáveis entre linhas
 - ✅ **Filtro de saída**: Evita repetição de prints
 - ✅ **Blocos aninhados**: Entende estruturas complexas
@@ -13,7 +13,7 @@ Este documento descreve o REPL oficial para o MiniLang JIT Interpreter.
 
 ### **Como Usar:**
 ```bash
-uv run .\minilang_block_repl.py
+uv run .\nox_repl.py
 ```
 
 ## 📝 Comandos Especiais
@@ -33,7 +33,7 @@ uv run .\minilang_block_repl.py
 
 ## 🧱 Blocos de Código
 
-O REPL suporta blocos de código da sintaxe MiniLang:
+O REPL suporta blocos de código da sintaxe Nox:
 
 ### Sintaxe Suportada
 - **Funções**: `func nome() -> tipo ... end`
@@ -46,7 +46,7 @@ O REPL suporta blocos de código da sintaxe MiniLang:
 O REPL detecta automaticamente quando você está iniciando um bloco:
 
 ```bash
-minilang[1]> if x > 5 then
+nox[1]> if x > 5 then
   > print("x é maior que 5")
   > end
 x é maior que 5
@@ -55,7 +55,7 @@ x é maior que 5
 ### Como Usar Blocos
 1. **Digite uma linha que inicie um bloco**:
    ```
-   minilang[1]> func fatorial(n: int) -> int
+   nox[1]> func fatorial(n: int) -> int
    ```
 
 2. **Continue digitando as linhas do bloco**:
@@ -78,21 +78,21 @@ x é maior que 5
 
 ### Exemplo 1: Função Fatorial
 ```bash
-minilang[1]> func fatorial(n: int) -> int
+nox[1]> func fatorial(n: int) -> int
   > if n <= 1 then
   >   return 1
   > else
   >   return n * fatorial(n - 1)
   > end
   > end
-minilang[2]> print(fatorial(5))
+nox[2]> print(fatorial(5))
 120
 ```
 
 ### Exemplo 2: Loop While
 ```bash
-minilang[1]> let i = 0
-minilang[2]> while i < 5 do
+nox[1]> let i = 0
+nox[2]> while i < 5 do
   > print(i)
   > i = i + 1
   > end
@@ -105,8 +105,8 @@ minilang[2]> while i < 5 do
 
 ### Exemplo 3: Condicional If/Else
 ```bash
-minilang[1]> let x = 10
-minilang[2]> if x > 5 then
+nox[1]> let x = 10
+nox[2]> if x > 5 then
   > print("x é maior que 5")
   > else
   > print("x é menor ou igual a 5")
@@ -116,7 +116,7 @@ x é maior que 5
 
 ### Exemplo 4: Loop For
 ```bash
-minilang[1]> for i in 0..5 do
+nox[1]> for i in 0..5 do
   > print(i * 2)
   > end
 0
@@ -129,7 +129,7 @@ minilang[1]> for i in 0..5 do
 
 ### Exemplo 5: Função com Loop Aninhado
 ```bash
-minilang[1]> func calcula_media(notas: int[], tamanho: int) -> int
+nox[1]> func calcula_media(notas: int[], tamanho: int) -> int
   > let soma: int = 0
   > let i: int = 0
   > 
@@ -175,8 +175,8 @@ Executando bloco com 10 linhas...
 ### Variáveis de Ambiente
 ```bash
 # Ativar modo debug (se disponível)
-set MINILANG_DEBUG=1
-uv run .\minilang_block_repl.py
+set NOX_DEBUG=1
+uv run .\nox_repl.py
 ```
 
 ### Arquivos de Configuração
@@ -190,7 +190,7 @@ uv run .\minilang_block_repl.py
 ```
 LLVM ERROR: Target does not support MC emission!
 ```
-**Solução**: Use `minilang_block_repl.py` que evita problemas de LLVM
+**Solução**: Use `nox_repl.py` que evita problemas de LLVM
 
 ### Problema: Prints Repetidos
 ```
@@ -210,7 +210,7 @@ Erro durante execução: Variável 'x' não definida
 ```
 Erro de sintaxe: bloco não fechado
 ```
-**Solução**: Use a sintaxe correta da MiniLang (`func/end`, `if/then/end`, etc.)
+**Solução**: Use a sintaxe correta da Nox (`func/end`, `if/then/end`, etc.)
 
 ## 🎯 Recursos Avançados
 
@@ -218,7 +218,7 @@ Erro de sintaxe: bloco não fechado
 Use o comando `.block` para entrar no modo bloco manualmente:
 
 ```bash
-minilang[1]> .block
+nox[1]> .block
 Modo bloco ativado. Digite seu código:
 (Digite duas linhas vazias consecutivas para finalizar)
   > let array = [1, 2, 3, 4, 5]
@@ -267,9 +267,9 @@ Executando bloco com 4 linhas...
 - Suporte a blocos de código com `{`/`}`
 - Detecção automática de blocos
 
-### v1.3 - REPL com Sintaxe MiniLang
-- **Sintaxe correta da MiniLang**: `func/end`, `if/then/end`, `while/do/end`
-- **Detecção automática** de blocos MiniLang
+### v1.3 - REPL com Sintaxe Nox
+- **Sintaxe correta da Nox**: `func/end`, `if/then/end`, `while/do/end`
+- **Detecção automática** de blocos Nox
 - **Blocos aninhados** com contagem inteligente
 - **Finalização flexível** com `end` ou duas linhas vazias
 
@@ -287,4 +287,4 @@ Para contribuir com melhorias no REPL:
 Para suporte ou dúvidas:
 - **Issues**: Abra uma issue no repositório
 - **Documentação**: Consulte este README
-- **Exemplos**: Veja a pasta `minilang_examples/` 
+- **Exemplos**: Veja a pasta `nox_examples/` 

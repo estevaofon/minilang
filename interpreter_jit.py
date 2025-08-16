@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-MiniLang JIT Interpreter - Versão Corrigida
+Nox JIT Interpreter - Versão Corrigida
 Com melhor suporte para printf no Windows
 
 Uso:
-    python interpreter_jit_fixed.py arquivo.ml
-    python interpreter_jit_fixed.py arquivo.ml --debug
+    python interpreter_jit_fixed.py arquivo.nx
+    python interpreter_jit_fixed.py arquivo.nx --debug
 """
 
 import sys
@@ -17,7 +17,7 @@ from pathlib import Path
 
 # Importar o compilador existente
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from compiler import MiniLangCompiler
+from compiler import NoxCompiler
 
 # Configurar saída UTF-8 no início
 if sys.platform == "win32":
@@ -27,11 +27,11 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
-class MiniLangJIT:
-    """Interpretador JIT para MiniLang usando LLVM"""
+class NoxJIT:
+    """Interpretador JIT para Nox usando LLVM"""
     
     def __init__(self, debug=False):
-        self.compiler = MiniLangCompiler()
+        self.compiler = NoxCompiler()
         self.debug = debug
         self.external_functions = {}
         self.allocated_memory = []
@@ -265,7 +265,7 @@ class MiniLangJIT:
         return result
     
     def execute(self, source: str) -> int:
-        """Executa código MiniLang"""
+        """Executa código Nox"""
         try:
             if self.debug:
                 print("[DEBUG] Compilando código...")
@@ -350,7 +350,7 @@ class MiniLangJIT:
             return 1
     
     def execute_line(self, line: str) -> int:
-        """Executa uma única linha de código MiniLang"""
+        """Executa uma única linha de código Nox"""
         try:
             # Remover espaços em branco e verificar se a linha está vazia
             line = line.strip()
@@ -460,7 +460,7 @@ class MiniLangJIT:
             return 0
         
         elif cmd == '.version':
-            print("MiniLang JIT Interpreter v1.1")
+            print("Nox JIT Interpreter")
             print("Python 3.13.1")
             print("LLVM JIT Compilation")
             return 0
@@ -473,9 +473,9 @@ class MiniLangJIT:
     def start_repl(self):
         """Inicia o REPL interativo"""
         print("=" * 60)
-        print("MiniLang JIT Interpreter - REPL Mode")
+        print("Nox JIT Interpreter - REPL Mode")
         print("=" * 60)
-        print("Digite código MiniLang linha por linha.")
+        print("Digite código Nox linha por linha.")
         print("Comandos especiais começam com '.' (ex: .help)")
         print("Pressione Ctrl+C ou digite .quit para sair")
         print("=" * 60)
@@ -486,7 +486,7 @@ class MiniLangJIT:
             while True:
                 try:
                     # Prompt personalizado
-                    prompt = f"minilang[{line_number}]> "
+                    prompt = f"nox[{line_number}]> "
                     line = input(prompt)
                     
                     # Executar a linha
@@ -609,9 +609,9 @@ class MiniLangJIT:
                 traceback.print_exc()
     
     def _compile_with_casting_functions(self, source: str) -> str:
-        """Compila o código MiniLang incluindo as funções de casting"""
+        """Compila o código Nox incluindo as funções de casting"""
         try:
-            # Compilar o código MiniLang (que já inclui as declarações das funções de casting)
+            # Compilar o código Nox (que já inclui as declarações das funções de casting)
             llvm_ir = self.compiler.compile(source)
             
             # Usar o LLVM IR original sem modificações
@@ -711,7 +711,7 @@ class MiniLangJIT:
         self.allocated_memory.clear()
     
     def execute_file(self, filename: str) -> int:
-        """Executa arquivo MiniLang"""
+        """Executa arquivo Nox"""
         try:
             # Garantir encoding UTF-8
             with open(filename, 'r', encoding='utf-8') as f:
@@ -735,14 +735,14 @@ class MiniLangJIT:
 def main():
     """Entry point"""
     if len(sys.argv) < 2:
-        print("MiniLang JIT Interpreter v1.1 (Fixed)")
+        print("Nox JIT Interpreter")
         print("Uso:")
-        print("  python interpreter_jit_fixed.py arquivo.ml")
-        print("  python interpreter_jit_fixed.py arquivo.ml --debug")
+        print("  python interpreter_jit_fixed.py arquivo.nx")
+        print("  python interpreter_jit_fixed.py arquivo.nx --debug")
         print("")
         print("Exemplos:")
-        print("  python interpreter_jit_fixed.py teste_simples.ml")
-        print("  python interpreter_jit_fixed.py teste_dijkstra_simples.ml --debug")
+        print("  python interpreter_jit_fixed.py teste_simples.nx")
+        print("  python interpreter_jit_fixed.py teste_dijkstra_simples.nx --debug")
         return 1
     
     filename = sys.argv[1]
@@ -750,12 +750,12 @@ def main():
     
     # Mensagem inicial
     if debug:
-        print(f"[DEBUG] MiniLang JIT Interpreter v1.1")
+        print(f"[DEBUG] Nox JIT Interpreter")
         print(f"[DEBUG] Python {sys.version}")
         print(f"[DEBUG] Platform: {sys.platform}")
         print("")
     
-    interpreter = MiniLangJIT(debug=debug)
+    interpreter = NoxJIT(debug=debug)
     return interpreter.execute_file(filename)
 
 

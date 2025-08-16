@@ -1,5 +1,5 @@
-# MiniLang Compiler v2.0
-# Compilador para a linguagem MiniLang com tipagem estática
+# Nox Compiler
+# Compilador para a linguagem Nox com tipagem estática
 
 import re
 import sys
@@ -1218,7 +1218,7 @@ class LLVMCodeGenerator:
             self.triple = default_triple
         
         # Criar módulo e builder
-        self.module = ir.Module(name="minilang_module")
+        self.module = ir.Module(name="nox_module")
         self.module.triple = self.triple
         
         # Configurar data layout baseado na plataforma (preferir código estático para GCC/MinGW)
@@ -4452,7 +4452,7 @@ def execute_ir(llvm_ir: str):
     return result
 
 # Compilador principal
-class MiniLangCompiler:
+class NoxCompiler:
     def __init__(self):
         self.lexer = None
         self.parser = None
@@ -4555,15 +4555,15 @@ def read_source_file(file_path: str) -> str:
 
 def print_usage():
     """Imprime informações de uso do programa."""
-    print("MiniLang Compiler v2.0")
+    print("Nox Compiler")
     print("Uso:")
-    print("  python compiler.py <arquivo.ml>                    # Executar programa")
-    print("  python compiler.py --compile <arquivo.ml>          # Gerar arquivo objeto")
+    print("  python compiler.py <arquivo.nx>                    # Executar programa")
+    print("  python compiler.py --compile <arquivo.nx>          # Gerar arquivo objeto")
     print("  python compiler.py --help                          # Mostrar esta ajuda")
     print("")
     print("Exemplos:")
-    print("  python compiler.py programa.ml")
-    print("  python compiler.py --compile programa.ml")
+    print("  python compiler.py programa.nx")
+    print("  python compiler.py --compile programa.nx")
 
 # Exemplo de uso
 if __name__ == "__main__":
@@ -4594,7 +4594,7 @@ if __name__ == "__main__":
     source_code = read_source_file(source_file)
     
     # Compilar
-    compiler = MiniLangCompiler()
+    compiler = NoxCompiler()
     
     try:
         # Gerar IR LLVM

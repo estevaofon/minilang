@@ -1,12 +1,12 @@
-# MiniLang v2.0
+# Nox
 
-A statically-typed mini programming language with LLVM backend compilation, featuring advanced data structures and algorithms.
+A statically-typed programming language with LLVM backend compilation, featuring advanced data structures and algorithms.
 
 ## Overview
 
-MiniLang v2.0 is a powerful programming language designed for educational purposes and practical applications. It features static typing, LLVM-based compilation, and supports advanced programming constructs including structs, auto-referencing, dynamic assignments, and complex algorithms.
+Nox is a powerful programming language designed for educational purposes and practical applications. It features static typing, LLVM-based compilation, and supports advanced programming constructs including structs, auto-referencing, dynamic assignments, and complex algorithms.
 
-## 🚀 New Features in v2.0
+## 🚀 Key Features
 
 ### **Advanced Data Structures**
 - **Structs with Auto-Reference**: Self-referencing structs using `ref` operator
@@ -60,7 +60,7 @@ MiniLang v2.0 is a powerful programming language designed for educational purpos
 1. Clone the repository:
 ```bash
 git clone <repository-url>
-cd mini-language
+cd nox
 ```
 
 2. Install dependencies using uv:
@@ -72,10 +72,10 @@ uv sync
 
 ### Compiling and Running Programs
 
-First, compile the source code into an object file using the MiniLang compiler:
+First, compile the source code into an object file using the Nox compiler:
 
 ```bash
-uv run python compiler.py --compile <source_file.ml>
+uv run python compiler.py --compile <source_file.nx>
 ```
 
 Then link the generated object file with the casting functions written in C:
@@ -95,7 +95,7 @@ Run the executable:
 Execute the comprehensive test suite:
 
 ```bash
-uv run python compiler.py --compile testes_unitarios_automatizados.ml
+uv run python compiler.py --compile testes_unitarios_automatizados.nx
 gcc -o testes.exe output.obj casting_functions.c
 ./testes.exe
 ```
@@ -104,52 +104,52 @@ gcc -o testes.exe output.obj casting_functions.c
 
 ### **Just-In-Time (JIT) Interpreter**
 
-MiniLang v2.0 includes a powerful JIT interpreter that compiles and executes code at runtime:
+Nox includes a powerful JIT interpreter that compiles and executes code at runtime:
 
 ```bash
-# Execute a MiniLang file directly
-uv run .\interpreter_jit.py .\minilang_examples\bubblesort.ml
+# Execute a Nox file directly
+uv run .\interpreter_jit.py .\nox_examples\bubblesort.nx
 
 # Execute with debug mode
-uv run .\interpreter_jit.py .\minilang_examples\bubblesort.ml --debug
+uv run .\interpreter_jit.py .\nox_examples\bubblesort.nx --debug
 ```
 
 **Features:**
 - ⚡ **Fast Execution**: Compiles to native code using LLVM JIT
 - 🔧 **Runtime Compilation**: No separate compilation step needed
-- 🎯 **Direct Execution**: Run `.ml` files immediately
+- 🎯 **Direct Execution**: Run `.nx` files immediately
 - 🐛 **Debug Support**: Detailed execution information
 
 ### **Interactive REPL (Read-Eval-Print Loop)**
 
-Experience MiniLang interactively with the official REPL:
+Experience Nox interactively with the official REPL:
 
 ```bash
 # Start the interactive REPL
-uv run .\minilang_block_repl.py
+uv run .\nox_repl.py
 ```
 
 **REPL Features:**
 - 🧱 **Block Support**: Write functions, loops, and conditionals interactively
-- 📝 **Syntax Aware**: Understands MiniLang syntax (`func/end`, `if/then/end`, `while/do/end`)
+- 📝 **Syntax Aware**: Understands Nox syntax (`func/end`, `if/then/end`, `while/do/end`)
 - 🔄 **State Persistence**: Variables and functions persist between lines
 - 🎨 **Clean Output**: Filters repeated prints for a clean interface
 - ⚡ **Smart Execution**: Detects block boundaries automatically
 
 **Example REPL Session:**
 ```bash
-minilang[1]> func fatorial(n: int) -> int
+nox[1]> func fatorial(n: int) -> int
   > if n <= 1 then
   >   return 1
   > else
   >   return n * fatorial(n - 1)
   > end
   > end
-minilang[2]> print(fatorial(5))
+nox[2]> print(fatorial(5))
 120
-minilang[3]> let array = [1, 2, 3, 4, 5]
-minilang[4]> let i = 0
-minilang[5]> while i < 5 do
+nox[3]> let array = [1, 2, 3, 4, 5]
+nox[4]> let i = 0
+nox[5]> while i < 5 do
   > print(array[i])
   > i = i + 1
   > end
@@ -172,7 +172,7 @@ For detailed REPL documentation, see [REPL_README.md](REPL_README.md).
 
 ### Variable Declarations
 
-```minilang
+```nox
 let x: int = 42
 let y: float = 3.14
 let texto: string = "Hello, World!"
@@ -181,7 +181,7 @@ let ativo: bool = true
 
 ### Arrays
 
-```minilang
+```nox
 let numeros: int[5] = [1, 2, 3, 4, 5]
 let matriz: float[3] = [1.1, 2.2, 3.3]
 let vazio: int[0] = []
@@ -192,7 +192,7 @@ let tamanho: int = length(numeros)  // Returns 5
 
 ### Structs
 
-```minilang
+```nox
 struct Pessoa
     nome: string,
     idade: int,
@@ -209,7 +209,7 @@ pessoa.nome = "João Silva"
 
 ### Auto-Referencing Structs
 
-```minilang
+```nox
 struct TreeNode
     valor: int,
     esquerda: ref TreeNode,
@@ -226,7 +226,7 @@ raiz.esquerda = ref filho_esq
 
 ### Functions
 
-```minilang
+```nox
 func add(a: int, b: int) -> int
     return a + b
 end
@@ -255,7 +255,7 @@ end
 
 ### Control Flow
 
-```minilang
+```nox
 if x > 10 then
     print("x is greater than 10")
 else
@@ -270,7 +270,7 @@ end
 
 ### Type Casting
 
-```minilang
+```nox
 let num: int = 42
 let str: string = to_str_int(num)  // Convert int to string
 let flt: float = to_str_float(num)     // Convert int to float
@@ -278,7 +278,7 @@ let flt: float = to_str_float(num)     // Convert int to float
 
 ### String Operations
 
-```minilang
+```nox
 let str1: string = "Hello"
 let str2: string = "World"
 let result: string = str1 + " " + str2  // String concatenation
@@ -289,31 +289,31 @@ let result: string = str1 + " " + str2  // String concatenation
 The project includes comprehensive examples demonstrating all features:
 
 ### Basic Examples
-- `teste_simples.ml` - Basic language features demonstration
-- `exemplo.ml` - Comprehensive example with arrays and functions
-- `demo_completa.ml` - Full demonstration of language capabilities
+- `teste_simples.nx` - Basic language features demonstration
+- `exemplo.nx` - Comprehensive example with arrays and functions
+- `demo_completa.nx` - Full demonstration of language capabilities
 
 ### Data Structure Examples
-- `pilha_exemplo.ml` - Stack implementation example
-- `hashmap_exemplo.ml` - Hash map implementation
-- `arvore_exemplo.ml` - Tree data structure example
-- `dijkstra_exemplo.ml` - Dijkstra's algorithm implementation
+- `pilha_exemplo.nx` - Stack implementation example
+- `hashmap_exemplo.nx` - Hash map implementation
+- `arvore_exemplo.nx` - Tree data structure example
+- `dijkstra_exemplo.nx` - Dijkstra's algorithm implementation
 
 ### Advanced Examples
-- `arvore_binaria_atualizada.ml` - Binary tree with auto-reference
-- `arvore_binaria_construtores.ml` - Binary tree with constructors
-- `teste_struct_auto_ref.ml` - Auto-referencing structs
-- `teste_solucao_array_statico.ml` - Array static to pointer conversion
+- `arvore_binaria_atualizada.nx` - Binary tree with auto-reference
+- `arvore_binaria_construtores.nx` - Binary tree with constructors
+- `teste_struct_auto_ref.nx` - Auto-referencing structs
+- `teste_solucao_array_statico.nx` - Array static to pointer conversion
 
 ### Test Suite
-- `testes_unitarios_automatizados.ml` - Comprehensive test suite (87 tests)
+- `testes_unitarios_automatizados.nx` - Comprehensive test suite (87 tests)
 
 ### Quick Start Example
 
-Create a file `hello.ml`:
+Create a file `hello.nx`:
 
-```minilang
-print("Hello from MiniLang v2.0!")
+```nox
+print("Hello from Nox!")
 
 // Basic operations
 let x: int = 10
@@ -335,7 +335,7 @@ print(produto.nome)
 
 Run it:
 ```bash
-uv run python compiler.py --compile hello.ml
+uv run python compiler.py --compile hello.nx
 gcc -o hello.exe output.obj casting_functions.c
 ./hello.exe
 ```
@@ -343,10 +343,10 @@ gcc -o hello.exe output.obj casting_functions.c
 ## Project Structure
 
 ```
-mini-language/
+nox/
 ├── compiler.py                          # Main compiler implementation
 ├── interpreter_jit.py                   # JIT interpreter for runtime execution
-├── minilang_block_repl.py              # Interactive REPL
+├── nox_repl.py              # Interactive REPL
 ├── casting_functions.c                  # C functions for type casting
 ├── pyproject.toml                      # Project configuration
 ├── uv.lock                            # Dependency lock file
@@ -355,15 +355,15 @@ mini-language/
 ├── RESUMO_IMPLEMENTACAO.md            # Implementation summary
 ├── AUTO_REFERENCIAMENTO_STRUCTS.md    # Auto-reference documentation
 ├── EXEMPLOS_AUTO_REFERENCIA.md        # Auto-reference examples
-├── minilang_examples/                  # Example programs
-│   ├── teste_simples.ml
-│   ├── exemplo.ml
-│   ├── demo_completa.ml
-│   ├── arvore_binaria_atualizada.ml
-│   ├── arvore_binaria_construtores.ml
-│   ├── teste_struct_auto_ref.ml
+├── nox_examples/                  # Example programs
+│   ├── teste_simples.nx
+│   ├── exemplo.nx
+│   ├── demo_completa.nx
+│   ├── arvore_binaria_atualizada.nx
+│   ├── arvore_binaria_construtores.nx
+│   ├── teste_struct_auto_ref.nx
 │   └── ...
-└── testes_unitarios_automatizados.ml   # Comprehensive test suite
+└── testes_unitarios_automatizados.nx   # Comprehensive test suite
 ```
 
 ## Language Features in Detail
@@ -396,7 +396,7 @@ mini-language/
 
 Example:
 
-```minilang
+```nox
 struct Node
     value: int,
     next: ref Node
@@ -423,7 +423,7 @@ end
 ### Advanced Features
 
 #### Structs with Auto-Reference
-```minilang
+```nox
 struct Node
     valor: int,
     proximo: ref Node
@@ -435,13 +435,13 @@ no1.proximo = ref no2
 ```
 
 #### Binary Search
-```minilang
+```nox
 let array: int[7] = [1, 3, 5, 7, 9, 11, 13]
 let posicao: int = busca_binaria(array, 7, 7)  // Returns 3
 ```
 
 #### Dynamic Struct Assignment
-```minilang
+```nox
 struct Funcionario
     id: int,
     salario: float,
@@ -504,4 +504,4 @@ This project is for educational purposes.
 
 ---
 
-**MiniLang v2.0** - A powerful, statically-typed programming language with advanced data structures, algorithms, LLVM backend compilation, JIT interpreter, and interactive REPL. Perfect for learning compiler design concepts and implementing complex programming language features.
+**Nox** - A powerful, statically-typed programming language with advanced data structures, algorithms, LLVM backend compilation, JIT interpreter, and interactive REPL. Perfect for learning compiler design concepts and implementing complex programming language features.

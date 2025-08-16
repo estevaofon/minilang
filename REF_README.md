@@ -1,6 +1,6 @@
-# MiniLang: When to use the `ref` keyword
+# Nox: When to use the `ref` keyword
 
-This guide explains concisely when and how to use `ref` in MiniLang, with practical examples and common pitfalls.
+This guide explains concisely when and how to use `ref` in Nox, with practical examples and common pitfalls.
 
 ## What is `ref`?
 
@@ -11,7 +11,7 @@ This guide explains concisely when and how to use `ref` in MiniLang, with practi
 ## Use `ref` for these cases
 
 - Self-referencing or cross-referencing struct fields
-```minilang
+```nox
 struct Node
     value: int,
     next: ref Node
@@ -23,7 +23,7 @@ n1.next = ref n2  // use the ref operator when assigning to a ref field
 ```
 
 - Function parameters when you need to mutate a struct argument
-```minilang
+```nox
 func append(node: ref Node, value: int)
     if node.next == null then
         node.next = ref Node(value, null)
@@ -35,7 +35,7 @@ end
 Without `ref` on the parameter, mutations inside the function will not affect the caller’s value.
 
 - Passing and mutating container-like structs (e.g., dynamic arrays modeled as a struct)
-```minilang
+```nox
 struct DynamicArray
     elements: int[100],
     capacity: int,
@@ -52,7 +52,7 @@ end
 ```
 
 - Variables that store references to structs and may be `null` or reassigned
-```minilang
+```nox
 let cur: ref Node = null
 if cur == null then
     cur = ref n1
@@ -60,7 +60,7 @@ end
 ```
 
 - Return types when you want to return an existing reference
-```minilang
+```nox
 func find(head: ref Node, value: int) -> ref Node
     let cur: ref Node = head
     while cur != null do
@@ -82,25 +82,25 @@ end
 ## Essential usage patterns
 
 - Assigning to `ref` fields/variables requires the `ref` operator on the right-hand side
-```minilang
+```nox
 root.left = ref childLeft   // correct
 // root.left = childLeft    // incorrect
 ```
 
 - Comparing to `null`
-```minilang
+```nox
 if node.next == null then
     // ...
 end
 ```
 
 - Reading a `ref` field does not require the operator
-```minilang
+```nox
 let nextNode: ref Node = node.next
 ```
 
 - Mutating via `ref` parameter
-```minilang
+```nox
 struct Counter
     value: int
 end
@@ -113,12 +113,12 @@ end
 ## Common mistakes and fixes
 
 - Forgetting the `ref` operator when assigning a `ref` destination
-```minilang
+```nox
 node.next = ref other
 ```
 
 - Declaring a parameter without `ref` but expecting call-site mutation
-```minilang
+```nox
 // wrong: mutations won’t escape the function
 func set_value(n: Node, v: int)
     n.value = v
@@ -134,14 +134,14 @@ end
 
 ## Repository examples
 
-- `minilang_examples/linked_list.ml` and `minilang_examples/stack.ml`: linked lists with `ref` fields and parameters.
-- `minilang_examples/binary_tree2.ml` and `minilang_examples/binary_tree3.ml`: binary trees with `ref` children.
-- `minilang_examples/dynamic_array.ml`: mutating a container via a `ref` parameter.
-- `minilang_examples/hashmap_string_keys.ml`: local `ref` variables and `null` checks.
+- `nox_examples/linked_list.nx` and `nox_examples/stack.nx`: linked lists with `ref` fields and parameters.
+- `nox_examples/binary_tree2.nx` and `nox_examples/binary_tree3.nx`: binary trees with `ref` children.
+- `nox_examples/dynamic_array.nx`: mutating a container via a `ref` parameter.
+- `nox_examples/hashmap_string_keys.nx`: local `ref` variables and `null` checks.
 
 ## Quick reference
 
 - Types: `field: ref T`, `param: ref T`, `let v: ref T = null`, `func f(...) -> ref T`
 - Operator: `ref expr` when assigning to a `ref` destination
 
-If in doubt, browse `minilang_examples/` and `testes_unitarios_automatizados.ml` for working patterns.
+If in doubt, browse `nox_examples/` and `testes_unitarios_automatizados.nx` for working patterns.
