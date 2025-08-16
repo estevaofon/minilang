@@ -736,7 +736,7 @@ class Parser:
                     self._advance()  # .
                     field_name = self._advance()
                     if field_name.type != TokenType.IDENTIFIER:
-                        raise SyntaxError("Esperado nome do campo após '.'")
+                        self._error_at_previous("Esperado nome do campo após '.'")
                     
                     # Verificar se há acesso a array após o campo (ex: struct.campo[indice])
                     if self._check(TokenType.LBRACKET):
@@ -756,7 +756,7 @@ class Parser:
                         self._advance()  # .
                         next_field = self._advance()
                         if next_field.type != TokenType.IDENTIFIER:
-                            raise SyntaxError("Esperado nome do campo após '.'")
+                            self._error_at_previous("Esperado nome do campo após '.'")
                     
                     if self._check(TokenType.ASSIGN):
                         # É uma atribuição de campo de struct
@@ -855,7 +855,7 @@ class Parser:
         condition = self._parse_expression()
         
         if not self._match(TokenType.THEN):
-            raise SyntaxError("Esperado 'then' após condição")
+            self._error_at_current("Esperado 'then' após condição")
             
         then_branch = []
         while not self._check(TokenType.END) and not self._check(TokenType.ELSE) and not self._is_at_end():
@@ -872,7 +872,7 @@ class Parser:
                     else_branch.append(stmt)
         
         if not self._match(TokenType.END):
-            raise SyntaxError("Esperado 'end' para fechar 'if'")
+            self._error_at_current("Esperado 'end' para fechar 'if'")
                 
         return IfNode(condition, then_branch, else_branch)
     
@@ -880,7 +880,7 @@ class Parser:
         condition = self._parse_expression()
         
         if not self._match(TokenType.DO):
-            raise SyntaxError("Esperado 'do' após condição")
+            self._error_at_current("Esperado 'do' após condição")
             
         body = []
         while not self._match(TokenType.END) and not self._is_at_end():
@@ -893,29 +893,29 @@ class Parser:
     def _parse_function(self) -> FunctionNode:
         name = self._advance()
         if name.type != TokenType.IDENTIFIER:
-            raise SyntaxError("Esperado nome da função")
+            self._error_at_current("Esperado nome da função")
             
         if not self._match(TokenType.LPAREN):
-            raise SyntaxError("Esperado '(' após nome da função")
+            self._error_at_current("Esperado '(' após nome da função")
             
         params = []
         while not self._check(TokenType.RPAREN) and not self._is_at_end():
             param_name = self._advance()
             if param_name.type != TokenType.IDENTIFIER:
-                raise SyntaxError("Esperado nome do parâmetro")
+                self._error_at_previous("Esperado nome do parâmetro")
             
             if not self._match(TokenType.COLON):
-                raise SyntaxError("Esperado ':' após nome do parâmetro")
+                self._error_at_current("Esperado ':' após nome do parâmetro")
             
             param_type = self._parse_type()
             params.append((param_name.value, param_type))
             
             if not self._check(TokenType.RPAREN):
                 if not self._match(TokenType.COMMA):
-                    raise SyntaxError("Esperado ',' entre parâmetros")
+                    self._error_at_current("Esperado ',' entre parâmetros")
         
         if not self._match(TokenType.RPAREN):
-            raise SyntaxError("Esperado ')' após parâmetros")
+            self._error_at_current("Esperado ')' após parâmetros")
         
         # Tipo de retorno
         return_type = VoidType()
@@ -1026,7 +1026,7 @@ class Parser:
             if self._match(TokenType.LBRACKET):
                 index = self._parse_expression()
                 if not self._match(TokenType.RBRACKET):
-                    raise SyntaxError("Esperado ']' após índice")
+                    self._error_at_current("Esperado ']' após índice")
                 
                 # Verificar se é acesso a string literal
                 if isinstance(expr, StringNode):
@@ -1038,12 +1038,12 @@ class Parser:
                     # Acesso a array de campo de struct: struct.campo[indice]
                     expr = ArrayAccessNode(f"{expr.struct_name}.{expr.field_name}", index)
                 else:
-                    raise SyntaxError("Acesso de array inválido")
+                    self._error_at_current("Acesso de array inválido")
             elif self._match(TokenType.DOT):
                 # Acesso a campo de struct
                 field_name = self._advance()
                 if field_name.type != TokenType.IDENTIFIER:
-                    raise SyntaxError("Esperado nome do campo após '.'")
+                    self._error_at_previous("Esperado nome do campo após '.'")
 
                 if isinstance(expr, IdentifierNode):
                     # Acesso direto a campo: pessoa.campo
@@ -1059,7 +1059,7 @@ class Parser:
                     # Aninhar caminho: pessoas[i].endereco.rua
                     expr = StructAccessFromArrayNode(expr.base_access, f"{expr.field_path}.{field_name.value}")
                 else:
-                    raise SyntaxError("Acesso a campo de struct inválido")
+                    self._error_at_current("Acesso a campo de struct inválido")
             elif self._match(TokenType.LPAREN):
                 # Verificar se é cast, construtor de struct ou chamada de função
                 if isinstance(expr, IdentifierNode):
@@ -1068,7 +1068,7 @@ class Parser:
                         # É um cast
                         cast_expr = self._parse_expression()
                         if not self._match(TokenType.RPAREN):
-                            raise SyntaxError("Esperado ')' após expressão de cast")
+                            self._error_at_current("Esperado ')' após expressão de cast")
                         
                         target_type = None
                         if expr.name == 'int':
@@ -1090,10 +1090,10 @@ class Parser:
                             args.append(self._parse_expression())
                             if not self._check(TokenType.RPAREN):
                                 if not self._match(TokenType.COMMA):
-                                    raise SyntaxError("Esperado ',' entre argumentos")
+                                    self._error_at_current("Esperado ',' entre argumentos")
                         
                         if not self._match(TokenType.RPAREN):
-                            raise SyntaxError("Esperado ')' após argumentos")
+                            self._error_at_current("Esperado ')' após argumentos")
                         
                         # Verificar se é uma função conhecida ou definida
                         if expr.name in ['printf', 'malloc', 'free', 'strlen', 'strcpy', 'strcat', 'to_str', 'array_to_str', 'to_int', 'to_float', 'ord', 'length'] or expr.name in self.defined_functions:
@@ -1105,7 +1105,7 @@ class Parser:
                             # Por padrão, assumir que é uma função (pode ser uma função não definida ainda)
                             expr = CallNode(expr.name, args)
                 else:
-                    raise SyntaxError("Chamada de função inválida")
+                    self._error_at_current("Chamada de função inválida")
             else:
                 break
                 
@@ -1143,7 +1143,7 @@ class Parser:
         if self._match(TokenType.LPAREN):
             expr = self._parse_expression()
             if not self._match(TokenType.RPAREN):
-                raise SyntaxError("Esperado ')' após expressão")
+                self._error_at_current("Esperado ')' após expressão")
             return expr
             
         if self._match(TokenType.LBRACKET):
@@ -1153,9 +1153,9 @@ class Parser:
                 elements.append(self._parse_expression())
                 if not self._check(TokenType.RBRACKET):
                     if not self._match(TokenType.COMMA):
-                        raise SyntaxError("Esperado ',' entre elementos do array")
+                        self._error_at_current("Esperado ',' entre elementos do array")
             if not self._match(TokenType.RBRACKET):
-                raise SyntaxError("Esperado ']' para fechar array")
+                self._error_at_current("Esperado ']' para fechar array")
             # Inferir tipo do array baseado nos elementos
             if elements:
                 if isinstance(elements[0], FloatNode):
@@ -1172,15 +1172,15 @@ class Parser:
         if self._match(TokenType.ZEROS):
             # Syntax sugar para arrays preenchidos com zeros
             if not self._match(TokenType.LPAREN):
-                raise SyntaxError("Esperado '(' após 'zeros'")
+                self._error_at_current("Esperado '(' após 'zeros'")
             
             if self._current_token().type != TokenType.NUMBER:
-                raise SyntaxError("Esperado tamanho do array")
+                self._error_at_current("Esperado tamanho do array")
             
             size = self._advance().value
             
             if not self._match(TokenType.RPAREN):
-                raise SyntaxError("Esperado ')' após tamanho")
+                self._error_at_current("Esperado ')' após tamanho")
             
             return ZerosNode(size, IntType())
             
@@ -1191,29 +1191,29 @@ class Parser:
     def _parse_struct_definition(self) -> StructDefinitionNode:
         """Parse definição de struct: struct Nome campo1: tipo1, campo2: tipo2, ... end"""
         if not self._check(TokenType.IDENTIFIER):
-            raise SyntaxError("Esperado nome do struct após 'struct'")
+            self._error_at_current("Esperado nome do struct após 'struct'")
         
         name = self._advance()
         
         fields = []
         while not self._check(TokenType.END) and not self._is_at_end():
             if not self._check(TokenType.IDENTIFIER):
-                raise SyntaxError("Esperado nome do campo")
+                self._error_at_current("Esperado nome do campo")
             
             field_name = self._advance()
             
             if not self._match(TokenType.COLON):
-                raise SyntaxError("Esperado ':' após nome do campo")
+                self._error_at_current("Esperado ':' após nome do campo")
             
             field_type = self._parse_type()
             fields.append((field_name.value, field_type))
             
             if not self._check(TokenType.END):
                 if not self._match(TokenType.COMMA):
-                    raise SyntaxError("Esperado ',' entre campos ou 'end' para fechar struct")
+                    self._error_at_current("Esperado ',' entre campos ou 'end' para fechar struct")
         
         if not self._match(TokenType.END):
-            raise SyntaxError("Esperado 'end' para fechar struct")
+            self._error_at_current("Esperado 'end' para fechar struct")
         
         # Criar o tipo de struct e armazená-lo
         struct_type = StructType(name.value, {field_name: field_type for field_name, field_type in fields})
@@ -1228,14 +1228,14 @@ class Parser:
         """Parse atribuição de campo de struct: struct.campo = valor ou struct.campo.subcampo = valor"""
         struct_name = self._advance()
         if struct_name.type != TokenType.IDENTIFIER:
-            raise SyntaxError("Esperado nome do struct")
+            self._error_at_previous("Esperado nome do struct")
         
         if not self._match(TokenType.DOT):
-            raise SyntaxError("Esperado '.' após nome do struct")
+            self._error_at_current("Esperado '.' após nome do struct")
         
         field_name = self._advance()
         if field_name.type != TokenType.IDENTIFIER:
-            raise SyntaxError("Esperado nome do campo após '.'")
+            self._error_at_previous("Esperado nome do campo após '.'")
         
         # Coletar todos os campos do caminho
         field_path = [field_name.value]
@@ -1244,11 +1244,11 @@ class Parser:
         while self._match(TokenType.DOT):
             next_field = self._advance()
             if next_field.type != TokenType.IDENTIFIER:
-                raise SyntaxError("Esperado nome do campo após '.'")
+                self._error_at_previous("Esperado nome do campo após '.'")
             field_path.append(next_field.value)
         
         if not self._match(TokenType.ASSIGN):
-            raise SyntaxError("Esperado '=' após nome do campo")
+            self._error_at_current("Esperado '=' após nome do campo")
         
         value = self._parse_expression()
         
@@ -2778,7 +2778,7 @@ class LLVMCodeGenerator:
         if hasattr(self, 'break_target') and self.break_target:
             self.builder.branch(self.break_target)
         else:
-            raise SyntaxError("'break' usado fora de um loop")
+            raise NoxSemanticError("'break' usado fora de um loop")
     
     def _convert_array_args_for_function_call(self, func: ir.Function, args: List[ir.Value]) -> List[ir.Value]:
         """Converte arrays estáticos para ponteiros quando necessário para chamadas de função"""
