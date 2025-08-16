@@ -39,7 +39,7 @@ Nox is a powerful programming language designed for educational purposes and pra
 - **Function Support**: Define and call functions with typed parameters and return values
 - **Array Support**: Create and manipulate arrays with type safety
 - **Control Flow**: `if-else` statements and `while` loops
-- **Type Casting**: Built-in casting functions between numeric types and strings
+- **Type Casting**: Universal `to_str` function for converting integers, floats, and arrays to string representations
 - **Global and Local Variables**: Support for both global and local variable declarations
 - **String Operations**: String concatenation and array-based string manipulation
 - **Print Function**: Built-in print functionality for output
@@ -105,73 +105,7 @@ gcc -o testes.exe output.obj casting_functions.c
 ./testes.exe
 ```
 
-## 🚀 JIT Interpreter & REPL
 
-### **Just-In-Time (JIT) Interpreter**
-
-Nox includes a powerful JIT interpreter that compiles and executes code at runtime:
-
-```bash
-# Execute a Nox file directly
-uv run .\interpreter_jit.py .\nox_examples\bubblesort.nx
-
-# Execute with debug mode
-uv run .\interpreter_jit.py .\nox_examples\bubblesort.nx --debug
-```
-
-**Features:**
-- ⚡ **Fast Execution**: Compiles to native code using LLVM JIT
-- 🔧 **Runtime Compilation**: No separate compilation step needed
-- 🎯 **Direct Execution**: Run `.nx` files immediately
-- 🐛 **Debug Support**: Detailed execution information
-
-### **Interactive REPL (Read-Eval-Print Loop)**
-
-Experience Nox interactively with the official REPL:
-
-```bash
-# Start the interactive REPL
-uv run .\nox_repl.py
-```
-
-**REPL Features:**
-- 🧱 **Block Support**: Write functions, loops, and conditionals interactively
-- 📝 **Syntax Aware**: Understands Nox syntax (`func/end`, `if/then/end`, `while/do/end`)
-- 🔄 **State Persistence**: Variables and functions persist between lines
-- 🎨 **Clean Output**: Filters repeated prints for a clean interface
-- ⚡ **Smart Execution**: Detects block boundaries automatically
-
-**Example REPL Session:**
-```bash
-nox[1]> func fatorial(n: int) -> int
-  > if n <= 1 then
-  >   return 1
-  > else
-  >   return n * fatorial(n - 1)
-  > end
-  > end
-nox[2]> print(fatorial(5))
-120
-nox[3]> let array = [1, 2, 3, 4, 5]
-nox[4]> let i = 0
-nox[5]> while i < 5 do
-  > print(array[i])
-  > i = i + 1
-  > end
-1
-2
-3
-4
-5
-```
-
-**REPL Commands:**
-- `.help` - Show available commands
-- `.show` - Display accumulated code
-- `.reset` - Clear the code buffer
-- `.quit` - Exit the REPL
-
-For detailed REPL documentation, see [REPL_README.md](REPL_README.md).
 
 ## Language Syntax
 
@@ -275,10 +209,27 @@ end
 
 ### Type Casting
 
+Nox provides powerful type conversion functions centered around the universal `to_str` function:
+
 ```nox
+// Converting integers to string
 let num: int = 42
-let str: string = to_str_int(num)  // Convert int to string
-let flt: float = to_str_float(num)     // Convert int to float
+let str_from_int: string = to_str(num)  // "42"
+
+// Converting floats to string
+let valor: float = 3.14159
+let str_from_float: string = to_str(valor)  // "3.141590"
+
+// Converting arrays to string representation
+let numeros: int[5] = [1, 2, 3, 4, 5]
+let str_from_array: string = to_str(numeros)  // "[1, 2, 3, 4, 5]"
+
+let floats: float[3] = [1.1, 2.2, 3.3]
+let str_from_float_array: string = to_str(floats)  // "[1.100000, 2.200000, 3.300000]"
+
+// Other numeric conversions
+let int_from_float: int = to_int(valor)     // 3 (truncates)
+let float_from_int: float = to_float(num)   // 42.000000
 ```
 
 ### String Operations
@@ -350,13 +301,11 @@ gcc -o hello.exe output.obj casting_functions.c
 ```
 nox/
 ├── compiler.py                          # Main compiler implementation
-├── interpreter_jit.py                   # JIT interpreter for runtime execution
-├── nox_repl.py              # Interactive REPL
 ├── casting_functions.c                  # C functions for type casting
 ├── pyproject.toml                      # Project configuration
 ├── uv.lock                            # Dependency lock file
 ├── README.md                          # This file
-├── REPL_README.md                     # REPL documentation
+├── REF_README.md                      # Reference types documentation
 ├── RESUMO_IMPLEMENTACAO.md            # Implementation summary
 ├── AUTO_REFERENCIAMENTO_STRUCTS.md    # Auto-reference documentation
 ├── EXEMPLOS_AUTO_REFERENCIA.md        # Auto-reference examples
@@ -419,10 +368,10 @@ end
 ### Built-in Functions
 
 - `print(expression)` - Output values to console
-- `to_str_int(int)` - Convert integer to string
-- `to_str_float(float)` - Convert float to string
+- `to_str(value)` - Universal conversion function that converts integers, floats, and arrays to string representation
 - `to_int(float)` - Convert float to integer (truncates)
 - `to_float(int)` - Convert integer to float
+- `strlen(string)` - Get the length of a string
 - `length(array)` - Get the size of an array (for arrays with defined size)
 
 ### Advanced Features
@@ -509,4 +458,4 @@ This project is for educational purposes.
 
 ---
 
-**Nox** - A powerful, statically-typed programming language with advanced data structures, algorithms, LLVM backend compilation, JIT interpreter, and interactive REPL. Perfect for learning compiler design concepts and implementing complex programming language features.
+**Nox** - A powerful, statically-typed programming language with advanced data structures, algorithms, and LLVM backend compilation. Perfect for learning compiler design concepts and implementing complex programming language features.

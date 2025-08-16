@@ -22,3 +22,4 @@ print("Valor Unicode de '!': " + to_str(valor_exclamacao))
 // Teste com caractere direto
 let valor_direto: int = ord("z")
 print("Valor Unicode de 'z': " + to_str(valor_direto))
+
