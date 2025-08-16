@@ -2,6 +2,11 @@
 
 A statically-typed programming language with LLVM backend compilation, featuring advanced data structures and algorithms.
 
+<p align="center">
+  <img width="300" height="300" alt="ChatGPT Image 15 de ago  de 2025, 22_43_56" src="https://github.com/user-attachments/assets/b923dd36-f4b7-4b83-972b-7ddd3547f2fe" />
+</p>
+
+
 ## Overview
 
 Nox is a powerful programming language designed for educational purposes and practical applications. It features static typing, LLVM-based compilation, and supports advanced programming constructs including structs, auto-referencing, dynamic assignments, and complex algorithms.
