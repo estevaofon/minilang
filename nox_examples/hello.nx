@@ -1,0 +1,18 @@
+print("Hello from Nox!")
+
+// Basic operations
+let x: int = 10
+let y: int = 30
+print("Sum: ")
+print(x + y)
+
+// Struct example
+struct Produto
+    codigo: int,
+    nome: string,
+    preco: float
+end
+
+let produto: Produto = Produto(1, "Laptop", 2500.50)
+print("Product: ")
+print(produto.nome)

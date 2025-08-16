@@ -2314,10 +2314,16 @@ class LLVMCodeGenerator:
                     struct_type = self.struct_types[struct_type_name]
                     if field_index < len(struct_type.elements):
                         field_llvm_type = struct_type.elements[field_index]
-                        # Se o campo é um ponteiro (array), imprimir como array
+                        # Se o campo é um ponteiro (array), verificar se não é string primeiro
                         if isinstance(field_llvm_type, ir.PointerType):
-                            self._print_struct_array_field(struct_name, field_name, field_llvm_type)
-                            return
+                            # Verificar se é uma string (i8*) ou um array real
+                            if field_llvm_type.pointee == self.char_type:
+                                # É uma string, usar o comportamento normal de print
+                                pass
+                            else:
+                                # É um array real, usar a função especializada
+                                self._print_struct_array_field(struct_name, field_name, field_llvm_type)
+                                return
         
         # Determinar formato baseado no tipo
         if value.type == self.bool_type:
@@ -2422,7 +2428,7 @@ class LLVMCodeGenerator:
             # Se é uma string, imprimir como string
             if isinstance(original_field_type, StringType) or isinstance(original_field_type, StrType):
                 # Acessar o campo usando getelementptr
-                field_ptr = self.builder.gep(struct_ptr, [ir.Constant(self.int_type, 0), ir.Constant(self.int_type, field_index)])
+                field_ptr = self.builder.gep(struct_ptr, [ir.Constant(ir.IntType(32), 0), ir.Constant(ir.IntType(32), field_index)])
                 
                 # Carregar o ponteiro da string
                 string_ptr = self.builder.load(field_ptr)
@@ -2435,7 +2441,7 @@ class LLVMCodeGenerator:
         field_index = self.struct_fields[struct_type_name][field_name]
         
         # Acessar o campo usando getelementptr
-        field_ptr = self.builder.gep(struct_ptr, [ir.Constant(self.int_type, 0), ir.Constant(self.int_type, field_index)])
+        field_ptr = self.builder.gep(struct_ptr, [ir.Constant(ir.IntType(32), 0), ir.Constant(ir.IntType(32), field_index)])
         
         # Carregar o ponteiro do array
         array_ptr = self.builder.load(field_ptr)
