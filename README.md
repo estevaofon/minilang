@@ -6,51 +6,27 @@ A statically-typed programming language with LLVM backend compilation, featuring
   <img width="300" height="300" alt="ChatGPT Image 15 de ago  de 2025, 22_43_56" src="https://github.com/user-attachments/assets/b923dd36-f4b7-4b83-972b-7ddd3547f2fe" />
 </p>
 
-
 ## Overview
 
 Nox is a powerful programming language designed for educational purposes and practical applications. It features static typing, LLVM-based compilation, and supports advanced programming constructs including structs, auto-referencing, dynamic assignments, and complex algorithms.
-
-## 🚀 Key Features
-
-### **Advanced Data Structures**
-- **Structs with Auto-Reference**: Self-referencing structs using `ref` operator
-- **Dynamic Field Assignment**: Modify struct fields at runtime
-- **Constructors**: Create structs with different data types
-- **Nested Structs**: Complex data structures with nested fields
-
-### **Array Enhancements**
-- **Static Arrays**: Fixed-size arrays with type safety
-- **Dynamic Arrays**: Arrays passed as function parameters
-- **Automatic Conversion**: Seamless conversion between static arrays and pointers
-- **Binary Search**: Efficient search algorithms for sorted arrays
-
-### **Algorithm Support**
-- **Binary Search**: O(log n) search in sorted arrays
-- **Linked Lists**: Self-referencing node structures
-- **Binary Trees**: Hierarchical data structures
-- **Complex Algorithms**: Support for advanced algorithms
 
 ## Features
 
 ### Core Language Features
 - **Static Type System**: Supports `int`, `float`, `string`, `bool`, and array types
 - **LLVM Backend**: Compiles to native machine code using LLVM
-- **Function Support**: Define and call functions with typed parameters and return values
-- **Array Support**: Create and manipulate arrays with type safety
+- **Functions**: Define and call functions with typed parameters and return values
+- **Arrays**: Fixed-size arrays with type safety and automatic conversion to pointers
 - **Control Flow**: `if-else` statements and `while` loops
-- **Type Casting**: Universal `to_str` function for converting integers, floats, and arrays to string representations
-- **Global and Local Variables**: Support for both global and local variable declarations
-- **String Operations**: String concatenation and array-based string manipulation
-- **Print Function**: Built-in print functionality for output
+- **Type Casting**: Universal `to_str` function and numeric conversions
+- **String Operations**: Concatenation and manipulation
+- **Built-in Functions**: `print`, `length`, `strlen`, and conversion functions
 
 ### Advanced Features
-- **Structs**: User-defined composite data types
-- **Auto-Reference**: Self-referencing structs with `ref` operator
+- **Structs**: User-defined composite data types with constructors
+- **Auto-Reference**: Self-referencing structs using `ref` operator
 - **Dynamic Assignment**: Modify struct fields at runtime
-- **Constructors**: Create structs with different data types
-- **Binary Search**: Efficient search in sorted arrays
-- **Complex Algorithms**: Support for linked lists, trees, and graphs
+- **Complex Algorithms**: Support for binary search, linked lists, trees, and graphs
 
 ## Installation
 
@@ -104,8 +80,6 @@ uv run python compiler.py --compile testes_unitarios_automatizados.nx
 gcc -o testes.exe output.obj casting_functions.c
 ./testes.exe
 ```
-
-
 
 ## Language Syntax
 
@@ -240,9 +214,6 @@ let str2: string = "World"
 let result: string = str1 + " " + str2  // String concatenation
 ```
 
-### Test Suite
-- `testes_unitarios_automatizados.nx` - Comprehensive test suite (87 tests)
-
 ### Quick Start Example
 
 Create a file `hello.nx`:
@@ -275,92 +246,35 @@ gcc -o hello.exe output.obj casting_functions.c
 ./hello.exe
 ```
 
-## Language Features in Detail
+## Data Types & Operators
 
-### Data Types
-
-- **int**: 64-bit integer values
-- **float**: Double-precision floating-point values
+### Supported Types
+- **int**: 64-bit integers
+- **float**: Double-precision floating-point
 - **string**: Null-terminated character arrays
 - **bool**: Boolean values (true/false)
-- **Arrays**: Fixed-size arrays of any type (e.g., `int[5]`, `float[10]`)
-- **Structs**: User-defined composite data types
+- **Arrays**: Fixed-size arrays (e.g., `int[5]`)
+- **Structs**: User-defined composite types
 - **ref**: Reference types for auto-referencing
 
 ### Operators
-
-- **Arithmetic**: `+`, `-`, `*`, `/`, `%` (modulo)
+- **Arithmetic**: `+`, `-`, `*`, `/`, `%`
 - **Comparison**: `>`, `<`, `>=`, `<=`, `==`, `!=`
-- **Logical**: `&` (and), `|` (or), `!` (not)
+- **Logical**: `&`, `|`, `!`
 - **Assignment**: `=`
-- **String Concatenation**: `++`
-- **Reference**: `ref` (for creating references)
-
-### Quick guide: When to use `ref`
-
-- Use `ref` in struct fields to model self-references or cross-struct references
-- Use `ref` in function parameters when you need to mutate a struct passed by the caller
-- Use `ref` variables/return types when storing or returning pointers (and possibly `null`)
-- See `REF_README.md` for a focused guide with examples
-
-Example:
-
-```nox
-struct Node
-    value: int,
-    next: ref Node
-end
-
-func append(node: ref Node, value: int)
-    if node.next == null then
-        node.next = ref Node(value, null)
-    else
-        append(node.next, value)
-    end
-end
-```
+- **String Concatenation**: `+`
+- **Reference**: `ref`
 
 ### Built-in Functions
-
-- `print(expression)` - Output values to console
-- `to_str(value)` - Universal conversion function that converts integers, floats, and arrays to string representation
-- `to_int(float)` - Convert float to integer (truncates)
+- `print(expression)` - Output to console
+- `to_str(value)` - Convert to string representation
+- `to_int(float)` - Convert float to integer
 - `to_float(int)` - Convert integer to float
-- `strlen(string)` - Get the length of a string
-- `length(array)` - Get the size of an array (for arrays with defined size)
+- `strlen(string)` - String length
+- `length(array)` - Array size
 
-### Advanced Features
-
-#### Structs with Auto-Reference
-```nox
-struct Node
-    valor: int,
-    proximo: ref Node
-end
-
-let no1: Node = Node(100, null)
-let no2: Node = Node(200, null)
-no1.proximo = ref no2
-```
-
-#### Binary Search
-```nox
-let array: int[7] = [1, 3, 5, 7, 9, 11, 13]
-let posicao: int = busca_binaria(array, 7, 7)  // Returns 3
-```
-
-#### Dynamic Struct Assignment
-```nox
-struct Funcionario
-    id: int,
-    salario: float,
-    ativo: bool
-end
-
-let func: Funcionario = Funcionario(1001, 3500.00, true)
-func.salario = 3800.00  // Dynamic assignment
-func.ativo = false
-```
+### Using `ref` for Auto-References
+Use `ref` for self-referencing structs, function parameters that need mutation, and pointer storage. See `REF_README.md` for detailed examples.
 
 ## Compilation Details
 
@@ -380,7 +294,6 @@ The compiler generates LLVM IR code that is then compiled to native machine code
 - **Struct Field Access**: Efficient access to struct fields with dynamic assignment
 - **Type Safety**: Comprehensive type checking for all language constructs
 
-
 ## Contributing
 
 This is an educational project showcasing advanced compiler design concepts. Feel free to explore the code, run examples, and experiment with the language features.
@@ -388,7 +301,3 @@ This is an educational project showcasing advanced compiler design concepts. Fee
 ## License
 
 This project is for educational purposes.
-
----
-
-**Nox** - A powerful, statically-typed programming language with advanced data structures, algorithms, and LLVM backend compilation. Perfect for learning compiler design concepts and implementing complex programming language features.
