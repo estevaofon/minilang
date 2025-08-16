@@ -25,7 +25,7 @@ func pop(node: ref Node) -> int
 end
 
 
-func peek(node: ref Node) -> int
+func _peek(node: ref Node) -> int
     if node == null | node.proximo == null then
         return -1
     end
@@ -56,7 +56,7 @@ func pop_front(head: ref Node) -> int
 end
 
 
-func is_empty(node: ref Node) -> bool
+func _is_empty(node: ref Node) -> bool
     return node == null | node.proximo == null
 end
     
@@ -80,22 +80,38 @@ func stack_pop() -> int
     return i
 end
 
+func peek() -> int
+    return _peek(no1)
+end
+
+func is_empty() -> bool
+    return _is_empty(no1)
+end
+
+func print_is_empty()
+    if is_empty() then
+        print("Pilha vazia")
+    else
+        print("Pilha não está vazia")
+    end
+end
+
 stack_push(20)
 stack_push(30)
 print_list(no1)
-print("apos pop")
-stack_pop()
+let topo: int = peek()
+print("Topo da pilha "+to_str(topo))
+let popped: int = stack_pop()
+print("pop(): "+to_str(popped))
 print_list(no1)
-let topo: int = peek(no1)
+let topo: int = peek()
 print("Topo da pilha "+to_str(topo))
-stack_pop()
-let topo: int = peek(no1)
+let popped: int = stack_pop()
+print("pop(): "+to_str(popped))
+let topo: int = peek()
 print("Topo da pilha "+to_str(topo))
-stack_pop()
-let topo: int = peek(no1)
+print_is_empty()
+stack_push(40)
+let topo: int = peek()
 print("Topo da pilha "+to_str(topo))
-if is_empty(no1) then
-    print("Pilha vazia")
-else
-    print("Pilha não está vazia")
-end
+print_is_empty()
