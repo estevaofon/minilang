@@ -1,0 +1,10 @@
+// ERRO SEMÂNTICO: Variável não declarada
+print("Teste: Undefined variable")
+
+let x: int = 10
+
+// Esta linha deve causar erro semântico - 'y' não foi declarada
+let resultado: int = x + y
+
+print("Resultado: ")
+print(to_str(resultado))

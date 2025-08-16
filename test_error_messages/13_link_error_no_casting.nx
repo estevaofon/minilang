@@ -1,0 +1,14 @@
+// ERRO DE LINK: Tentativa de usar to_str sem linking das funções de casting
+print("Teste: Link error - to_str sem casting_functions.c")
+
+let numero: int = 42
+let decimal: float = 3.14159
+
+// Estas linhas vão compilar normalmente mas falhar no link
+print("Número inteiro: ")
+print(to_str(numero))
+
+print("Número decimal: ")
+print(to_str(decimal))
+
+print("Fim do teste")

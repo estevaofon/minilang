@@ -1,0 +1,10 @@
+// ERRO SEMÂNTICO: Função não declarada
+print("Teste: Undefined function")
+
+let x: int = 42
+
+// Esta linha deve causar erro semântico - função não existe
+let resultado: int = funcao_inexistente(x)
+
+print("Resultado: ")
+print(to_str(resultado))

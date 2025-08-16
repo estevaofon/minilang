@@ -1,0 +1,11 @@
+// ERRO DE TIPO: Tipos incompatíveis
+print("Teste: Type mismatch")
+
+let x: int = 10
+let y: string = "hello"
+
+// Esta linha pode causar erro - tentativa de somar int com string
+let resultado: int = x + y
+
+print("Resultado: ")
+print(to_str(resultado))

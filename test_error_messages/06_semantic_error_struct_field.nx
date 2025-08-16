@@ -1,0 +1,13 @@
+// ERRO SEMÂNTICO: Campo de struct inexistente
+print("Teste: Undefined struct field")
+
+struct Pessoa
+    nome: string,
+    idade: int
+end
+
+let p: Pessoa = Pessoa("João", 25)
+
+// Esta linha deve causar erro semântico - campo 'salario' não existe
+print("Salário: ")
+print(to_str(p.salario))

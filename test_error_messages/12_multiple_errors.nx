@@ -1,0 +1,19 @@
+// MÚLTIPLOS ERROS: Este arquivo contém vários erros
+print("Teste: Multiple errors")
+
+// Erro 1: Variável não declarada
+let a: int = variavel_nao_declarada
+
+// Erro 2: String não terminada (comentado para testar outros erros)
+// let msg: string = "string sem fim
+
+// Erro 3: Função inexistente
+let resultado: int = funcao_que_nao_existe(10)
+
+// Erro 4: Campo de struct inexistente
+struct Teste
+    campo: int
+end
+
+let t: Teste = Teste(5)
+print(t.campo_inexistente)

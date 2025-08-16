@@ -1,0 +1,16 @@
+// ERRO DE ARRAY: Acesso incorreto
+print("Teste: Array access errors")
+
+let arr: int[3] = [1, 2, 3]
+
+// Esta linha pode causar erro - variável inexistente como índice
+let elemento: int = arr[indice_inexistente]
+
+print("Elemento: ")
+print(to_str(elemento))
+
+// Tentar acessar array inexistente
+let valor: int = array_inexistente[0]
+
+print("Valor: ")
+print(to_str(valor))

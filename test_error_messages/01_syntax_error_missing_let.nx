@@ -1,0 +1,8 @@
+// ERRO DE SINTAXE: Declaração de variável sem 'let'
+print("Teste: Missing let keyword")
+
+// Esta linha deve causar erro de sintaxe
+x: int = 10  // Faltou 'let' antes de 'x'
+
+print("Valor: ")
+print(to_str(x))

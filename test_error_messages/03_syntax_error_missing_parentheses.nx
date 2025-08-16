@@ -1,0 +1,14 @@
+// ERRO DE SINTAXE: Parênteses ausentes
+print("Teste: Missing parentheses")
+
+let x: int = 10
+let y: int = 20
+
+// Esta linha deve causar erro de sintaxe - faltam parênteses
+if x > y then
+    print("x é maior")
+end
+
+// Esta linha também deve causar erro - parênteses não fechados
+print("Resultado: "
+print("Fim")

@@ -9,6 +9,43 @@ from typing import List, Optional, Union, Dict, Tuple
 import llvmlite.ir as ir
 import llvmlite.binding as llvm
 
+# Classes de erro personalizadas para melhor diagnóstico
+class NoxError(Exception):
+    """Classe base para todos os erros do compilador Nox"""
+    def __init__(self, message: str, line: int = None, column: int = None, source_line: str = None):
+        self.message = message
+        self.line = line
+        self.column = column
+        self.source_line = source_line
+        super().__init__(self.format_error())
+    
+    def format_error(self) -> str:
+        """Formata o erro com informações de contexto"""
+        if self.line is not None and self.column is not None:
+            error_msg = f"Erro na linha {self.line}, coluna {self.column}: {self.message}"
+            if self.source_line:
+                error_msg += f"\n  {self.source_line}"
+                if self.column > 0:
+                    error_msg += f"\n  {' ' * (self.column - 1)}^"
+            return error_msg
+        return f"Erro: {self.message}"
+
+class NoxSyntaxError(NoxError):
+    """Erro de sintaxe na análise do código"""
+    pass
+
+class NoxSemanticError(NoxError):
+    """Erro semântico (tipos, variáveis não declaradas, etc.)"""
+    pass
+
+class NoxCodeGenError(NoxError):
+    """Erro na geração de código LLVM"""
+    pass
+
+class NoxRuntimeError(NoxError):
+    """Erro de tempo de execução"""
+    pass
+
 # Tipos de tokens
 class TokenType(Enum):
     # Literais
@@ -146,6 +183,7 @@ class ReferenceType(Type):
 class Lexer:
     def __init__(self, source: str):
         self.source = source
+        self.source_lines = source.split('\n')  # Manter linhas para contexto de erro
         self.position = 0
         self.line = 1
         self.column = 1
@@ -234,7 +272,11 @@ class Lexer:
         if self.position < len(self.source):
             self._advance()  # Pular aspas final
         else:
-            raise SyntaxError(f"String não terminada na linha {self.line}")
+            source_line = self.source_lines[self.line - 1] if self.line <= len(self.source_lines) else ""
+            raise NoxSyntaxError(
+                "String não terminada - esperado '\"'",
+                self.line, self.column, source_line
+            )
             
         self.tokens.append(Token(TokenType.STRING, string_value, self.line, start_column))
     
@@ -348,7 +390,11 @@ class Lexer:
             self.tokens.append(Token(operators[char], char, self.line, start_column))
             self._advance()
         else:
-            raise SyntaxError(f"Caractere inválido '{char}' na linha {self.line}, coluna {self.column}")
+            source_line = self.source_lines[self.line - 1] if self.line <= len(self.source_lines) else ""
+            raise NoxSyntaxError(
+                f"Caractere inválido '{char}'",
+                self.line, self.column, source_line
+            )
 
 # AST (Abstract Syntax Tree)
 @dataclass
@@ -515,8 +561,9 @@ class StringCharAccessNode(ASTNode):
 
 # Parser
 class Parser:
-    def __init__(self, tokens: List[Token]):
+    def __init__(self, tokens: List[Token], source_lines: List[str] = None):
         self.tokens = tokens
+        self.source_lines = source_lines or []  # Linhas de código fonte para contexto
         self.position = 0
         self.struct_types = {}  # Armazenar tipos de struct definidos
         self.defined_functions = set()  # Conjunto de funções definidas
@@ -524,23 +571,32 @@ class Parser:
         # Profundidade de funções para identificar escopo atual (0 = topo do arquivo)
         self.in_function_depth = 0
     
+    def _get_source_line(self, line_num: int) -> str:
+        """Obtém a linha de código fonte para contexto de erro"""
+        if 1 <= line_num <= len(self.source_lines):
+            return self.source_lines[line_num - 1]
+        return ""
+    
     def _error(self, message: str) -> None:
         """Lança um erro de sintaxe com informações de linha e coluna"""
         token = self._current_token()
-        raise SyntaxError(f"Erro na linha {token.line}, coluna {token.column}: {message}")
+        source_line = self._get_source_line(token.line)
+        raise NoxSyntaxError(message, token.line, token.column, source_line)
     
     def _error_at_current(self, message: str) -> None:
         """Lança um erro de sintaxe para o token atual"""
         token = self._current_token()
-        raise SyntaxError(f"Erro na linha {token.line}, coluna {token.column}: {message}")
+        source_line = self._get_source_line(token.line)
+        raise NoxSyntaxError(message, token.line, token.column, source_line)
     
     def _error_at_previous(self, message: str) -> None:
         """Lança um erro de sintaxe para o token anterior"""
         if self.position > 0:
             token = self.tokens[self.position - 1]
-            raise SyntaxError(f"Erro na linha {token.line}, coluna {token.column}: {message}")
+            source_line = self._get_source_line(token.line)
+            raise NoxSyntaxError(message, token.line, token.column, source_line)
         else:
-            raise SyntaxError(f"Erro no início do arquivo: {message}")
+            raise NoxSyntaxError(f"Erro no início do arquivo: {message}")
         
     def parse(self) -> ProgramNode:
         statements = []
@@ -1128,7 +1184,9 @@ class Parser:
             
             return ZerosNode(size, IntType())
             
-        raise SyntaxError(f"Token inesperado: {self._current_token()}")
+        token = self._current_token()
+        expected_tokens = ["número", "string", "identificador", "true", "false", "null", "(", "[", "zeros"]
+        self._error(f"Token inesperado '{token.value}'. Esperado: {', '.join(expected_tokens)}")
     
     def _parse_struct_definition(self) -> StructDefinitionNode:
         """Parse definição de struct: struct Nome campo1: tipo1, campo2: tipo2, ... end"""
@@ -1203,11 +1261,14 @@ class Parser:
 
 # Gerador de código LLVM
 class LLVMCodeGenerator:
-    def __init__(self):
+    def __init__(self, source_lines: List[str] = None):
         # Inicializar LLVM
         llvm.initialize()
         llvm.initialize_native_target()
         llvm.initialize_native_asmprinter()
+        
+        # Manter linhas de código fonte para contexto de erro
+        self.source_lines = source_lines or []
         
         # Obter o triple da plataforma atual; ajustar para MinGW/GCC quando necessário
         default_triple = llvm.get_default_triple()
@@ -2064,7 +2125,7 @@ class LLVMCodeGenerator:
                     else:
                         self.builder.store(value, gv)
                 else:
-                    raise NameError(f"Variável '{node.identifier}' não definida")
+                    raise NoxSemanticError(f"Variável '{node.identifier}' não foi declarada")
             else:
                 # Nova variável local
                 var_type = self._convert_type(node.var_type)
@@ -3532,7 +3593,7 @@ class LLVMCodeGenerator:
                 # Senão, carregar o valor
                 return self.builder.load(var, name=node.name)
             else:
-                raise NameError(f"Variável '{node.name}' não definida")
+                raise NoxSemanticError(f"Variável '{node.name}' não foi declarada")
             
         elif isinstance(node, CallNode):
             # Função embutida 'ord'
@@ -3716,7 +3777,7 @@ class LLVMCodeGenerator:
             elif node.function_name in self.functions:
                 func = self.functions[node.function_name]
             else:
-                raise NameError(f"Função '{node.function_name}' não definida")
+                raise NoxSemanticError(f"Função '{node.function_name}' não foi declarada")
             args = []
             
             # Gerar argumentos considerando tipos esperados
@@ -4468,19 +4529,26 @@ class NoxCompiler:
         self.codegen = None
         
     def compile(self, source: str) -> str:
-        # Análise léxica
-        self.lexer = Lexer(source)
-        tokens = self.lexer.tokenize()
-        
-        # Análise sintática
-        self.parser = Parser(tokens)
-        ast = self.parser.parse()
-        
-        # Geração de código
-        self.codegen = LLVMCodeGenerator()
-        llvm_module = self.codegen.generate(ast)
-        
-        return str(llvm_module)
+        try:
+            # Análise léxica
+            self.lexer = Lexer(source)
+            tokens = self.lexer.tokenize()
+            
+            # Análise sintática
+            self.parser = Parser(tokens, self.lexer.source_lines)
+            ast = self.parser.parse()
+            
+            # Geração de código
+            self.codegen = LLVMCodeGenerator(self.lexer.source_lines)
+            llvm_module = self.codegen.generate(ast)
+            
+            return str(llvm_module)
+        except NoxError:
+            # Re-lançar erros Nox sem modificação
+            raise
+        except Exception as e:
+            # Capturar outros erros e convertê-los em NoxError
+            raise NoxError(f"Erro interno do compilador: {str(e)}")
     
     def compile_to_object(self, source: str, output_file: str):
         try:
@@ -4518,9 +4586,33 @@ class NoxCompiler:
             
             print("Parseando assembly...")
             # Compilar para objeto
-            mod = llvm.parse_assembly(llvm_ir)
+            try:
+                mod = llvm.parse_assembly(llvm_ir)
+            except RuntimeError as e:
+                # Melhorar mensagem de erro LLVM
+                error_msg = str(e)
+                if "LLVM IR parsing error" in error_msg:
+                    # Extrair informações da linha do erro LLVM
+                    import re
+                    line_match = re.search(r'<string>:(\d+):', error_msg)
+                    if line_match:
+                        llvm_line = int(line_match.group(1))
+                        # Tentar mapear de volta para o código fonte
+                        # (isso é uma aproximação, pois o mapeamento exato seria complexo)
+                        raise NoxCodeGenError(
+                            f"Erro na geração de código LLVM: {error_msg}\n"
+                            f"Isso pode ser causado por um problema no código Nox, como:\n"
+                            f"- Acesso incorreto a campos de struct\n"
+                            f"- Tipos incompatíveis em expressões\n"
+                            f"- Uso de variáveis não declaradas"
+                        )
+                raise NoxCodeGenError(f"Erro na geração de código LLVM: {error_msg}")
+            
             print("Verificando módulo...")
-            mod.verify()
+            try:
+                mod.verify()
+            except Exception as e:
+                raise NoxCodeGenError(f"Código LLVM inválido gerado: {str(e)}")
             
             # Definir o triple e data layout
             mod.triple = triple
@@ -4544,11 +4636,14 @@ class NoxCompiler:
             
             print(f"Arquivo objeto criado com sucesso: {output_file}")
             
+        except NoxError as e:
+            print(f"Erro de compilação: {e}")
+            raise
         except Exception as e:
-            print(f"Erro na geração do objeto: {e}")
+            print(f"Erro interno na geração do objeto: {e}")
             import traceback
             traceback.print_exc()
-            raise
+            raise NoxCodeGenError(f"Erro interno na geração do objeto: {str(e)}")
 
 def read_source_file(file_path: str) -> str:
     """Lê o conteúdo de um arquivo de código fonte."""
@@ -4634,10 +4729,33 @@ if __name__ == "__main__":
                 import traceback
                 traceback.print_exc()
         
+    except NoxSyntaxError as e:
+        print(f"ERRO DE SINTAXE:")
+        print(e)
+        sys.exit(1)
+    except NoxSemanticError as e:
+        print(f"ERRO SEMÂNTICO:")
+        print(e)
+        sys.exit(1)
+    except NoxCodeGenError as e:
+        print(f"ERRO DE GERAÇÃO DE CÓDIGO:")
+        print(e)
+        sys.exit(1)
+    except NoxRuntimeError as e:
+        print(f"ERRO DE EXECUÇÃO:")
+        print(e)
+        sys.exit(1)
+    except NoxError as e:
+        print(f"ERRO:")
+        print(e)
+        sys.exit(1)
     except Exception as e:
-        print(f"Erro na compilação: {e}")
+        print(f"ERRO INTERNO DO COMPILADOR:")
+        print(f"{e}")
+        print("\nPor favor, reporte este erro aos desenvolvedores.")
         import traceback
         traceback.print_exc()
+        sys.exit(1)
 
 # Recursos implementados:
 # 1. ✅ Tipagem estática: let x: int = 10

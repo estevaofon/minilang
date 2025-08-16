@@ -1,0 +1,10 @@
+// ERRO DE CARACTERE: Caractere inválido
+print("Teste: Invalid character")
+
+let x: int = 10
+
+// Esta linha deve causar erro - caractere @ é inválido
+let y: int = x @ 5
+
+print("Resultado: ")
+print(to_str(y))

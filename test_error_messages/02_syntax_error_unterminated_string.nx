@@ -1,0 +1,7 @@
+// ERRO DE SINTAXE: String não terminada
+print("Teste: Unterminated string")
+
+// Esta linha deve causar erro de sintaxe
+let mensagem: string = "Esta string não termina
+
+print(mensagem)

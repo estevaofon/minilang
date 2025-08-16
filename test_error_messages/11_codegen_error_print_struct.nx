@@ -1,0 +1,14 @@
+// ERRO DE GERAÇÃO DE CÓDIGO: Tentativa de imprimir struct diretamente
+print("Teste: Print struct directly")
+
+struct MinhaStruct
+    campo1: int,
+    campo2: string,
+    campo3: float
+end
+
+let obj: MinhaStruct = MinhaStruct(42, "teste", 3.14)
+
+// Esta linha pode causar erro de geração de código LLVM
+// pois não podemos imprimir um struct diretamente
+print(obj)

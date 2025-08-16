@@ -1,0 +1,22 @@
+// ERRO DE STRUCT: Construtor com argumentos incorretos
+print("Teste: Wrong struct constructor")
+
+struct Produto
+    codigo: int,
+    nome: string,
+    preco: float
+end
+
+// Esta linha deve causar erro - número incorreto de argumentos
+let p1: Produto = Produto(1, "Laptop")  // Faltou o preço
+
+// Esta linha também deve causar erro - tipo de struct incorreto
+struct Cliente
+    id: int,
+    nome: string
+end
+
+let p2: Produto = Cliente(1, "João")  // Tipo incompatível
+
+print("Produto: ")
+print(p1.nome)
