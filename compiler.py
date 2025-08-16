@@ -401,6 +401,19 @@ class ASTNode:
     def __init__(self):
         self.line = None
         self.column = None
+        self.source_line = None
+        
+    def set_location(self, token: 'Token', source_lines: List[str] = None):
+        """Define localização do nó baseado em token"""
+        self.line = token.line
+        self.column = token.column
+        if source_lines and token.line <= len(source_lines):
+            self.source_line = source_lines[token.line - 1]
+        return self
+    
+    def has_location(self) -> bool:
+        """Verifica se o nó tem informações de localização"""
+        return self.line is not None and self.column is not None
 
 @dataclass
 class NumberNode(ASTNode):
@@ -590,6 +603,33 @@ class StringCharAccessNode(ASTNode):
     index: ASTNode
 
 # Parser
+class ErrorContext:
+    """Context manager para capturar e propagar erros com localização"""
+    def __init__(self, parser: 'Parser', current_node: ASTNode = None):
+        self.parser = parser
+        self.current_node = current_node
+        
+    def __enter__(self):
+        return self
+        
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type and issubclass(exc_type, Exception) and not issubclass(exc_type, (NoxError,)):
+            # Capturar exceções genéricas e convertê-las em erros com localização
+            if self.current_node and self.current_node.has_location():
+                # Usar localização do nó atual
+                source_line = self.current_node.source_line or (
+                    self.parser.source_lines[self.current_node.line - 1] 
+                    if self.current_node.line <= len(self.parser.source_lines)
+                    else ""
+                )
+                raise NoxSemanticError(str(exc_val), self.current_node.line, self.current_node.column, source_line) from exc_val
+            else:
+                # Usar token atual do parser
+                token = self.parser._current_token()
+                source_line = self.parser._get_source_line(token.line)
+                raise NoxSemanticError(str(exc_val), token.line, token.column, source_line) from exc_val
+        return False
+
 class Parser:
     def __init__(self, tokens: List[Token], source_lines: List[str] = None):
         self.tokens = tokens
@@ -600,6 +640,7 @@ class Parser:
         self.defined_structs = set()    # Conjunto de structs definidos
         # Profundidade de funções para identificar escopo atual (0 = topo do arquivo)
         self.in_function_depth = 0
+        self._current_context_node = None  # Para rastreamento de contexto
     
     def _get_source_line(self, line_num: int) -> str:
         """Obtém a linha de código fonte para contexto de erro"""
@@ -632,9 +673,18 @@ class Parser:
         """Adiciona informações de linha e coluna ao nó AST"""
         if token is None:
             token = self._current_token()
-        node.line = token.line
-        node.column = token.column
-        return node
+        return node.set_location(token, self.source_lines)
+    
+    def _create_node_with_location(self, node_class, *args, token: Token = None, **kwargs) -> ASTNode:
+        """Cria um nó AST com localização automática"""
+        if token is None:
+            token = self._current_token()
+        node = node_class(*args, **kwargs)
+        return self._add_location_info(node, token)
+    
+    def _with_context(self, node: ASTNode = None):
+        """Retorna context manager para captura de erros com localização"""
+        return ErrorContext(self, node)
     
     def _semantic_error(self, message: str, node: ASTNode = None) -> None:
         """Lança um erro semântico com informações de linha e coluna"""
@@ -1201,8 +1251,7 @@ class Parser:
             
         if self._current_token().type == TokenType.IDENTIFIER:
             token = self._current_token()
-            node = IdentifierNode(self._advance().value)
-            return self._add_location_info(node, token)
+            return self._create_node_with_location(IdentifierNode, self._advance().value, token=token)
             
         if self._match(TokenType.LPAREN):
             expr = self._parse_expression()
@@ -1324,6 +1373,31 @@ class Parser:
             return NestedStructAssignmentNode(struct_name.value, field_path, value)
 
 # Gerador de código LLVM
+class CodeGenContext:
+    """Context manager para geração de código com captura automática de erros"""
+    def __init__(self, generator: 'LLVMCodeGenerator', node: ASTNode = None):
+        self.generator = generator
+        self.node = node
+        
+    def __enter__(self):
+        self.generator._current_node = self.node
+        return self
+        
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type and not issubclass(exc_type, (NoxError,)):
+            # Capturar erros de geração de código e adicionar localização
+            if self.node and self.node.has_location():
+                source_line = self.node.source_line or (
+                    self.generator.source_lines[self.node.line - 1] 
+                    if self.node.line <= len(self.generator.source_lines)
+                    else ""
+                )
+                raise NoxCodeGenError(str(exc_val), self.node.line, self.node.column, source_line) from exc_val
+            else:
+                raise NoxCodeGenError(str(exc_val)) from exc_val
+        self.generator._current_node = None
+        return False
+
 class LLVMCodeGenerator:
     def __init__(self, source_lines: List[str] = None):
         # Inicializar LLVM
@@ -1333,6 +1407,7 @@ class LLVMCodeGenerator:
         
         # Manter linhas de código fonte para contexto de erro
         self.source_lines = source_lines or []
+        self._current_node = None  # Nó atual sendo processado
         
         # Obter o triple da plataforma atual; ajustar para MinGW/GCC quando necessário
         default_triple = llvm.get_default_triple()
@@ -1390,6 +1465,10 @@ class LLVMCodeGenerator:
                 source_line = self.source_lines[node.line - 1]
                 raise NoxSemanticError(message, node.line, node.column, source_line)
         raise NoxSemanticError(message)
+    
+    def _with_context(self, node: ASTNode = None):
+        """Retorna context manager para geração de código com localização"""
+        return CodeGenContext(self, node)
         
     def _declare_external_functions(self):
         # printf
@@ -3875,7 +3954,10 @@ class LLVMCodeGenerator:
             
             # Verificar se há arrays estáticos sendo passados para funções que esperam ponteiros
             args = self._convert_array_args_for_function_call(func, args)
-            return self.builder.call(func, args)
+            
+            # Aplicar context manager para capturar erros de tipo mismatch
+            with self._with_context(node):
+                return self.builder.call(func, args)
             
         elif isinstance(node, BinaryOpNode):
             left = self._generate_expression(node.left)

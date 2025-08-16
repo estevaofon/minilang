@@ -1,0 +1,9 @@
+let array: int[5] = [5, 3, 8, 4, 2]
+
+print("Array original: "+ to_str(array))
+print("tamanho do array: " + to_str(length(array)))
+
+func bubblesort(array: int[], tamanho: int) -> void
+end
+
+bubblesort(array, length(array))
