@@ -3620,7 +3620,10 @@ class LLVMCodeGenerator:
                     
                     # Verificar se o argumento precisa de cast para o tipo esperado pela função
                     if func == self.to_str_int and arg_value.type != self.int_type:
-                        if hasattr(arg_value.type, 'width') and arg_value.type.width == 8:
+                        if hasattr(arg_value.type, 'width') and arg_value.type.width == 1:
+                            # Converter de i1 (bool) para i64 usando zext
+                            arg_value = self.builder.zext(arg_value, self.int_type)
+                        elif hasattr(arg_value.type, 'width') and arg_value.type.width == 8:
                             # Converter de i8 para i64
                             arg_value = self.builder.sext(arg_value, self.int_type)
                         elif arg_value.type != self.int_type:

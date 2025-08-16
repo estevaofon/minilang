@@ -1,0 +1,157 @@
+// Teste completo de acesso e impressão de campos de struct
+print("=== TESTE COMPLETO DE STRUCTS ===")
+print("")
+
+// Struct com diferentes tipos de campos
+struct Pessoa
+    id: int,
+    nome: string,
+    idade: int,
+    altura: float,
+    ativo: bool
+end
+
+// Struct aninhado
+struct Endereco
+    rua: string,
+    numero: int,
+    cidade: string
+end
+
+struct Funcionario
+    pessoa: Pessoa,
+    endereco: Endereco,
+    salario: float,
+    cargo: string
+end
+
+// Teste 1: Struct simples
+print(">>> Teste 1: Struct simples")
+let p1: Pessoa = Pessoa(1, "Ana Silva", 25, 1.65, true)
+
+print("ID: ")
+print(to_str(p1.id))
+print("Nome: ")
+print(p1.nome)
+print("Idade: ")
+print(to_str(p1.idade))
+print("Altura: ")
+print(to_str(p1.altura))
+print("Ativo: ")
+print(to_str(p1.ativo))
+print("")
+
+// Teste 2: Modificação de campos
+print(">>> Teste 2: Modificação de campos")
+p1.nome = "Ana Santos"
+p1.idade = 26
+p1.altura = 1.67
+p1.ativo = false
+
+print("Após modificação:")
+print("Nome: ")
+print(p1.nome)
+print("Idade: ")
+print(to_str(p1.idade))
+print("Altura: ")
+print(to_str(p1.altura))
+print("Ativo: ")
+print(to_str(p1.ativo))
+print("")
+
+// Teste 3: Múltiplas instâncias
+print(">>> Teste 3: Múltiplas instâncias")
+let p2: Pessoa = Pessoa(2, "Bruno Costa", 30, 1.80, true)
+let p3: Pessoa = Pessoa(3, "Carla Lima", 28, 1.55, false)
+
+print("Pessoa 2 - Nome: ")
+print(p2.nome)
+print("Pessoa 2 - Idade: ")
+print(to_str(p2.idade))
+
+print("Pessoa 3 - Nome: ")
+print(p3.nome)
+print("Pessoa 3 - Idade: ")
+print(to_str(p3.idade))
+print("")
+
+// Teste 4: Structs aninhados
+print(">>> Teste 4: Structs aninhados")
+let endereco1: Endereco = Endereco("Rua das Flores", 123, "São Paulo")
+let func1: Funcionario = Funcionario(p1, endereco1, 5000.50, "Desenvolvedora")
+
+print("Funcionário:")
+print("Nome: ")
+print(func1.pessoa.nome)
+print("ID: ")
+print(to_str(func1.pessoa.id))
+print("Salário: ")
+print(to_str(func1.salario))
+print("Cargo: ")
+print(func1.cargo)
+print("Endereço - Rua: ")
+print(func1.endereco.rua)
+print("Endereço - Número: ")
+print(to_str(func1.endereco.numero))
+print("Endereço - Cidade: ")
+print(func1.endereco.cidade)
+print("")
+
+// Teste 5: Modificação de campos aninhados
+print(">>> Teste 5: Modificação de campos aninhados")
+func1.pessoa.nome = "Ana Santos Silva"
+func1.salario = 5500.75
+func1.endereco.cidade = "Rio de Janeiro"
+
+print("Após modificação:")
+print("Nome: ")
+print(func1.pessoa.nome)
+print("Salário: ")
+print(to_str(func1.salario))
+print("Cidade: ")
+print(func1.endereco.cidade)
+print("")
+
+// Teste 6: Struct com todos os tipos primitivos
+struct TiposTeste
+    valor_int: int,
+    valor_float: float,
+    valor_bool: bool,
+    valor_string: string
+end
+
+print(">>> Teste 6: Todos os tipos primitivos")
+let tipos: TiposTeste = TiposTeste(42, 3.14159, true, "Hello World")
+
+print("Int: ")
+print(to_str(tipos.valor_int))
+print("Float: ")
+print(to_str(tipos.valor_float))
+print("Bool: ")
+print(to_str(tipos.valor_bool))
+print("String: ")
+print(tipos.valor_string)
+print("")
+
+// Teste 7: Comparações com campos de struct
+print(">>> Teste 7: Comparações com campos")
+if p2.idade > p3.idade then
+    print("Bruno é mais velho que Carla")
+else
+    print("Carla é mais velha que Bruno")
+end
+
+if func1.salario > 5000.0 then
+    print("Salário acima de 5000")
+else
+    print("Salário abaixo de 5000")
+end
+
+if p1.ativo then
+    print("Ana está ativa")
+else
+    print("Ana não está ativa")
+end
+
+print("")
+print("=== TESTE COMPLETO FINALIZADO ===")

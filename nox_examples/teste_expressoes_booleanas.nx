@@ -1,0 +1,78 @@
+// Teste de impressão direta de expressões booleanas
+print("=== TESTE DE EXPRESSÕES BOOLEANAS ===")
+print("")
+
+// Variáveis para teste
+let a: int = 10
+let b: int = 20
+let c: float = 5.5
+let d: float = 3.2
+let verdadeiro: bool = true
+let falso: bool = false
+
+print(">>> Teste 1: Comparações numéricas")
+print("a = 10, b = 20")
+print("a > b: ")
+print(to_str(a > b))
+print("a < b: ")
+print(to_str(a < b))
+print("a == b: ")
+print(to_str(a == b))
+print("a != b: ")
+print(to_str(a != b))
+print("")
+
+print(">>> Teste 2: Comparações com floats")
+print("c = 5.5, d = 3.2")
+print("c > d: ")
+print(to_str(c > d))
+print("c < d: ")
+print(to_str(c < d))
+print("c == d: ")
+print(to_str(c == d))
+print("")
+
+print(">>> Teste 3: Operações lógicas")
+print("verdadeiro = true, falso = false")
+print("verdadeiro: ")
+print(to_str(verdadeiro))
+print("falso: ")
+print(to_str(falso))
+print("verdadeiro == true: ")
+print(to_str(verdadeiro == true))
+print("falso == false: ")
+print(to_str(falso == false))
+print("")
+
+print(">>> Teste 4: Expressões complexas")
+print("(a < b) e (c > d): ")
+print(to_str((a < b) & (c > d)))
+print("(a > b) ou (c > d): ")
+print(to_str((a > b) | (c > d)))
+print("not verdadeiro: ")
+print(to_str(!verdadeiro))
+print("not falso: ")
+print(to_str(!falso))
+print("")
+
+print(">>> Teste 5: Comparações de igualdade")
+print("10 == 10: ")
+print(to_str(10 == 10))
+print("10 == 5: ")
+print(to_str(10 == 5))
+print("5.5 == 5.5: ")
+print(to_str(5.5 == 5.5))
+print("5.5 == 3.2: ")
+print(to_str(5.5 == 3.2))
+print("")
+
+print(">>> Teste 6: Expressões aninhadas")
+print("((a + 5) > b) & (c != d): ")
+print(to_str(((a + 5) > b) & (c != d)))
+print("(a * 2) == b: ")
+print(to_str((a * 2) == b))
+print("(c - d) > 2.0: ")
+print(to_str((c - d) > 2.0))
+print("")
+
+print("=== TESTE FINALIZADO ===")
