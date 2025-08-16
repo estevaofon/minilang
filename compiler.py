@@ -4,7 +4,7 @@
 import re
 import sys
 from enum import Enum
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional, Union, Dict, Tuple
 import llvmlite.ir as ir
 import llvmlite.binding as llvm
@@ -397,40 +397,62 @@ class Lexer:
             )
 
 # AST (Abstract Syntax Tree)
-@dataclass
 class ASTNode:
-    pass
+    def __init__(self):
+        self.line = None
+        self.column = None
 
 @dataclass
 class NumberNode(ASTNode):
     value: int
+    
+    def __post_init__(self):
+        super().__init__()
 
 @dataclass
 class FloatNode(ASTNode):
     value: float
+    
+    def __post_init__(self):
+        super().__init__()
 
 @dataclass
 class StringNode(ASTNode):
     value: str
+    
+    def __post_init__(self):
+        super().__init__()
 
 @dataclass
 class ArrayNode(ASTNode):
     elements: List[ASTNode]
     element_type: Type
+    
+    def __post_init__(self):
+        super().__init__()
 
 @dataclass
 class ZerosNode(ASTNode):
     size: int
     element_type: Type
+    
+    def __post_init__(self):
+        super().__init__()
 
 @dataclass
 class ArrayAccessNode(ASTNode):
     array_name: str
     index: ASTNode
+    
+    def __post_init__(self):
+        super().__init__()
 
 @dataclass
 class IdentifierNode(ASTNode):
     name: str
+    
+    def __post_init__(self):
+        super().__init__()
 
 @dataclass
 class BinaryOpNode(ASTNode):
@@ -491,6 +513,9 @@ class ReturnNode(ASTNode):
 class CallNode(ASTNode):
     function_name: str
     arguments: List[ASTNode]
+    
+    def __post_init__(self):
+        super().__init__()
 
 @dataclass
 class StructDefinitionNode(ASTNode):
@@ -501,6 +526,9 @@ class StructDefinitionNode(ASTNode):
 class StructAccessNode(ASTNode):
     struct_name: str
     field_name: str
+    
+    def __post_init__(self):
+        super().__init__()
 
 @dataclass
 class StructAccessFromArrayNode(ASTNode):
@@ -552,7 +580,9 @@ class ReferenceNode(ASTNode):
 @dataclass
 class BreakNode(ASTNode):
     """Nó para a keyword break"""
-    pass
+    
+    def __post_init__(self):
+        super().__init__()
 
 @dataclass
 class StringCharAccessNode(ASTNode):
@@ -597,6 +627,22 @@ class Parser:
             raise NoxSyntaxError(message, token.line, token.column, source_line)
         else:
             raise NoxSyntaxError(f"Erro no início do arquivo: {message}")
+    
+    def _add_location_info(self, node: ASTNode, token: Token = None) -> ASTNode:
+        """Adiciona informações de linha e coluna ao nó AST"""
+        if token is None:
+            token = self._current_token()
+        node.line = token.line
+        node.column = token.column
+        return node
+    
+    def _semantic_error(self, message: str, node: ASTNode = None) -> None:
+        """Lança um erro semântico com informações de linha e coluna"""
+        if node and node.line is not None and node.column is not None:
+            source_line = self._get_source_line(node.line)
+            raise NoxSemanticError(message, node.line, node.column, source_line)
+        else:
+            raise NoxSemanticError(message)
         
     def parse(self) -> ProgramNode:
         statements = []
@@ -945,7 +991,9 @@ class Parser:
     
     def _parse_break(self) -> BreakNode:
         """Parse a keyword break"""
-        return BreakNode()
+        token = self.tokens[self.position - 1]  # Token 'break' já foi consumido
+        node = BreakNode()
+        return self._add_location_info(node, token)
     
     def _parse_expression(self) -> ASTNode:
         return self._parse_or()
@@ -1047,11 +1095,17 @@ class Parser:
 
                 if isinstance(expr, IdentifierNode):
                     # Acesso direto a campo: pessoa.campo
-                    expr = StructAccessNode(expr.name, field_name.value)
+                    struct_access = StructAccessNode(expr.name, field_name.value)
+                    struct_access.line = field_name.line
+                    struct_access.column = field_name.column
+                    expr = struct_access
                 elif isinstance(expr, StructAccessNode):
                     # Acesso aninhado: pessoa.endereco.rua
                     full_path = f"{expr.field_name}.{field_name.value}"
-                    expr = StructAccessNode(expr.struct_name, full_path)
+                    struct_access = StructAccessNode(expr.struct_name, full_path)
+                    struct_access.line = field_name.line
+                    struct_access.column = field_name.column
+                    expr = struct_access
                 elif isinstance(expr, ArrayAccessNode):
                     # Acesso: pessoas[i].campo (armazenar caminho como string)
                     expr = StructAccessFromArrayNode(expr, field_name.value)
@@ -1097,13 +1151,19 @@ class Parser:
                         
                         # Verificar se é uma função conhecida ou definida
                         if expr.name in ['printf', 'malloc', 'free', 'strlen', 'strcpy', 'strcat', 'to_str', 'array_to_str', 'to_int', 'to_float', 'ord', 'length'] or expr.name in self.defined_functions:
-                            expr = CallNode(expr.name, args)
+                            call_node = CallNode(expr.name, args)
+                            call_node.line = expr.line
+                            call_node.column = expr.column
+                            expr = call_node
                         elif expr.name in self.defined_structs:
                             # É um construtor de struct
                             expr = StructConstructorNode(expr.name, args)
                         else:
                             # Por padrão, assumir que é uma função (pode ser uma função não definida ainda)
-                            expr = CallNode(expr.name, args)
+                            call_node = CallNode(expr.name, args)
+                            call_node.line = expr.line
+                            call_node.column = expr.column
+                            expr = call_node
                 else:
                     self._error_at_current("Chamada de função inválida")
             else:
@@ -1135,10 +1195,14 @@ class Parser:
             
         if self._current_token().type == TokenType.BOOL:
             # Para casts como bool(1), retornar um IdentifierNode
-            return IdentifierNode(self._advance().value)
+            token = self._current_token()
+            node = IdentifierNode(self._advance().value)
+            return self._add_location_info(node, token)
             
         if self._current_token().type == TokenType.IDENTIFIER:
-            return IdentifierNode(self._advance().value)
+            token = self._current_token()
+            node = IdentifierNode(self._advance().value)
+            return self._add_location_info(node, token)
             
         if self._match(TokenType.LPAREN):
             expr = self._parse_expression()
@@ -1318,6 +1382,14 @@ class LLVMCodeGenerator:
         
         # Declarar funções externas
         self._declare_external_functions()
+    
+    def _semantic_error(self, message: str, node: ASTNode = None) -> None:
+        """Lança um erro semântico com informações de linha e coluna"""
+        if node and node.line is not None and node.column is not None:
+            if node.line <= len(self.source_lines):
+                source_line = self.source_lines[node.line - 1]
+                raise NoxSemanticError(message, node.line, node.column, source_line)
+        raise NoxSemanticError(message)
         
     def _declare_external_functions(self):
         # printf
@@ -2125,7 +2197,7 @@ class LLVMCodeGenerator:
                     else:
                         self.builder.store(value, gv)
                 else:
-                    raise NoxSemanticError(f"Variável '{node.identifier}' não foi declarada")
+                    self._semantic_error(f"Variável '{node.identifier}' não foi declarada", node)
             else:
                 # Nova variável local
                 var_type = self._convert_type(node.var_type)
@@ -2237,7 +2309,7 @@ class LLVMCodeGenerator:
             elif struct_name in self.global_vars:
                 struct_ptr = self.global_vars[struct_name]
             else:
-                raise NameError(f"Variável '{struct_name}' não encontrada")
+                self._semantic_error(f"Variável '{struct_name}' não encontrada", node)
             
             # Determinar o tipo de struct baseado na variável
             struct_type_name = None
@@ -2253,7 +2325,7 @@ class LLVMCodeGenerator:
             
             # Verificar se o campo existe
             if field_name not in self.struct_fields[struct_type_name]:
-                raise NameError(f"Campo '{field_name}' não encontrado em struct '{struct_type_name}'")
+                self._semantic_error(f"Campo '{field_name}' não encontrado em struct '{struct_type_name}'", node)
             
             # Fazer cast do ponteiro para o tipo correto do struct
             if struct_type_name in self.struct_types:
@@ -2778,7 +2850,7 @@ class LLVMCodeGenerator:
         if hasattr(self, 'break_target') and self.break_target:
             self.builder.branch(self.break_target)
         else:
-            raise NoxSemanticError("'break' usado fora de um loop")
+            self._semantic_error("'break' usado fora de um loop", node)
     
     def _convert_array_args_for_function_call(self, func: ir.Function, args: List[ir.Value]) -> List[ir.Value]:
         """Converte arrays estáticos para ponteiros quando necessário para chamadas de função"""
@@ -2926,7 +2998,7 @@ class LLVMCodeGenerator:
                 
                 for i, field_name in enumerate(field_path):
                     if current_struct_type not in self.struct_fields or field_name not in self.struct_fields[current_struct_type]:
-                        raise NameError(f"Campo '{field_name}' não encontrado em struct '{current_struct_type}'")
+                        self._semantic_error(f"Campo '{field_name}' não encontrado em struct '{current_struct_type}'", node)
                     
                     # Obter o índice do campo
                     field_index = self.struct_fields[current_struct_type][field_name]
@@ -2982,7 +3054,7 @@ class LLVMCodeGenerator:
             else:
                 # Acesso simples a campo
                 if node.field_name not in self.struct_fields[struct_type_name]:
-                    raise NameError(f"Campo '{node.field_name}' não encontrado em struct '{struct_type_name}'")
+                    self._semantic_error(f"Campo '{node.field_name}' não encontrado em struct '{struct_type_name}'", node)
                 
                 # Obter o índice do campo
                 field_index = self.struct_fields[struct_type_name][node.field_name]
@@ -3593,7 +3665,7 @@ class LLVMCodeGenerator:
                 # Senão, carregar o valor
                 return self.builder.load(var, name=node.name)
             else:
-                raise NoxSemanticError(f"Variável '{node.name}' não foi declarada")
+                self._semantic_error(f"Variável '{node.name}' não foi declarada", node)
             
         elif isinstance(node, CallNode):
             # Função embutida 'ord'
@@ -3777,7 +3849,7 @@ class LLVMCodeGenerator:
             elif node.function_name in self.functions:
                 func = self.functions[node.function_name]
             else:
-                raise NoxSemanticError(f"Função '{node.function_name}' não foi declarada")
+                self._semantic_error(f"Função '{node.function_name}' não foi declarada", node)
             args = []
             
             # Gerar argumentos considerando tipos esperados
@@ -4052,7 +4124,7 @@ class LLVMCodeGenerator:
         
         # Verificar se o campo existe
         if node.field_name not in self.struct_fields[struct_type_name]:
-            raise NameError(f"Campo '{node.field_name}' não encontrado em struct '{struct_type_name}'")
+            self._semantic_error(f"Campo '{node.field_name}' não encontrado em struct '{struct_type_name}'", node)
         
         # Ajustar ponteiro base e fazer cast para o tipo correto do struct
         if struct_type_name in self.struct_types:
