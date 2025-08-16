@@ -240,27 +240,6 @@ let str2: string = "World"
 let result: string = str1 + " " + str2  // String concatenation
 ```
 
-## Examples
-
-The project includes comprehensive examples demonstrating all features:
-
-### Basic Examples
-- `teste_simples.nx` - Basic language features demonstration
-- `exemplo.nx` - Comprehensive example with arrays and functions
-- `demo_completa.nx` - Full demonstration of language capabilities
-
-### Data Structure Examples
-- `pilha_exemplo.nx` - Stack implementation example
-- `hashmap_exemplo.nx` - Hash map implementation
-- `arvore_exemplo.nx` - Tree data structure example
-- `dijkstra_exemplo.nx` - Dijkstra's algorithm implementation
-
-### Advanced Examples
-- `arvore_binaria_atualizada.nx` - Binary tree with auto-reference
-- `arvore_binaria_construtores.nx` - Binary tree with constructors
-- `teste_struct_auto_ref.nx` - Auto-referencing structs
-- `teste_solucao_array_statico.nx` - Array static to pointer conversion
-
 ### Test Suite
 - `testes_unitarios_automatizados.nx` - Comprehensive test suite (87 tests)
 
@@ -294,30 +273,6 @@ Run it:
 uv run python compiler.py --compile hello.nx
 gcc -o hello.exe output.obj casting_functions.c
 ./hello.exe
-```
-
-## Project Structure
-
-```
-nox/
-├── compiler.py                          # Main compiler implementation
-├── casting_functions.c                  # C functions for type casting
-├── pyproject.toml                      # Project configuration
-├── uv.lock                            # Dependency lock file
-├── README.md                          # This file
-├── REF_README.md                      # Reference types documentation
-├── RESUMO_IMPLEMENTACAO.md            # Implementation summary
-├── AUTO_REFERENCIAMENTO_STRUCTS.md    # Auto-reference documentation
-├── EXEMPLOS_AUTO_REFERENCIA.md        # Auto-reference examples
-├── nox_examples/                  # Example programs
-│   ├── teste_simples.nx
-│   ├── exemplo.nx
-│   ├── demo_completa.nx
-│   ├── arvore_binaria_atualizada.nx
-│   ├── arvore_binaria_construtores.nx
-│   ├── teste_struct_auto_ref.nx
-│   └── ...
-└── testes_unitarios_automatizados.nx   # Comprehensive test suite
 ```
 
 ## Language Features in Detail
@@ -425,28 +380,6 @@ The compiler generates LLVM IR code that is then compiled to native machine code
 - **Struct Field Access**: Efficient access to struct fields with dynamic assignment
 - **Type Safety**: Comprehensive type checking for all language constructs
 
-## Test Results
-
-The comprehensive test suite includes **87 tests** covering:
-
-- ✅ **Basic Types**: int, float, string, bool
-- ✅ **Arithmetic Operations**: All mathematical operations
-- ✅ **Comparison Operations**: All comparison operators
-- ✅ **Logical Operations**: AND, OR, NOT operations
-- ✅ **Arrays**: Static and dynamic arrays
-- ✅ **String Operations**: Concatenation and manipulation
-- ✅ **Type Conversion**: All casting functions
-- ✅ **Control Flow**: if-else and while loops
-- ✅ **Functions**: Function definition and calls
-- ✅ **Structs**: Basic struct operations
-- ✅ **Algorithms**: Array manipulation and search
-- ✅ **Auto-Reference**: Self-referencing structs
-- ✅ **Dynamic Assignment**: Runtime field modification
-- ✅ **Constructors**: Struct creation with different types
-- ✅ **Binary Search**: Efficient search algorithms
-- ✅ **Complex Operations**: Advanced language features
-
-**Result**: 🎉 **ALL 87 TESTS PASSED!**
 
 ## Contributing
 
