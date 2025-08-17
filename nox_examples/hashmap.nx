@@ -1,3 +1,35 @@
+struct Node
+    key: string,
+    value: string,
+    next: ref Node
+end
+
+func append(node: ref Node,  key: string, value: string)
+    if node.next == null then
+        node.next = ref Node(key, value, null)
+    else
+        append(node.next, key, value)
+    end
+end
+
+func is_key_in_node(node: ref Node, key: string) -> bool
+    while node != null do
+        if (node.key == key) then
+            print(node.key + "==" +key)
+            return true
+        end
+        node = node.next
+    end
+    return false
+end
+
+// make_array(int, size, default)
+// make_array(Node, 16, null)
+
+let capacity: int = 16
+
+let buckets: Node[16] = [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null]
+
 // Função hash polonomial
 func hash(chave: string, tamanho_da_tabela: int) -> int
     //Função hash para uso em tabelas hash.
@@ -12,3 +44,17 @@ func hash(chave: string, tamanho_da_tabela: int) -> int
     return hash_value
 end
 
+func push(key: string, value: string) -> void
+    let local_hash: int = hash(key, capacity)
+    print("Imprimindo a hash local")
+    print(local_hash)
+    if buckets[local_hash] == null then
+        print("passei aqui")
+        buckets[local_hash] = Node(key, value, null)
+        return
+    end
+    let node: Node = buckets[local_hash]
+end
+
+push("celular", "android")
+print(is_key_in_node(buckets[2], "celular"))

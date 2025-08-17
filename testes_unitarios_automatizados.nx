@@ -673,7 +673,7 @@ assert(bag.valores[1] == 7, "Elemento do array dentro do struct deve ser 7")
 // 20.12 to_str em array (conversão para string)
 let ai_conv: int[3] = [1, 2, 3]
 let str_ai: string = to_str(ai_conv)
-assert(str_ai == "[", "to_str(array) deve iniciar com '['")
+assert(str_ai[0] == "[", "to_str(array) deve iniciar com '['")
 
 // 20.13 Comparação de strings distintas (primeiro caractere)
 assert("A" != "B", "Strings diferentes devem ser !=")

@@ -1511,6 +1511,10 @@ class LLVMCodeGenerator:
         strcat_ty = ir.FunctionType(voidptr_ty, [voidptr_ty, voidptr_ty])
         self.strcat = ir.Function(self.module, strcat_ty, name="strcat")
         
+        # strcmp
+        strcmp_ty = ir.FunctionType(ir.IntType(32), [voidptr_ty, voidptr_ty])
+        self.strcmp = ir.Function(self.module, strcmp_ty, name="strcmp")
+        
         # sprintf para conversões
         sprintf_ty = ir.FunctionType(ir.IntType(32), [voidptr_ty, voidptr_ty], var_arg=True)
         self.sprintf = ir.Function(self.module, sprintf_ty, name="sprintf")
@@ -1542,7 +1546,7 @@ class LLVMCodeGenerator:
         
         if sys.platform == "win32":
             # Adicionar atributos para linking correto no Windows
-            for func in [self.printf, self.malloc, self.free, self.strlen, self.strcpy, self.strcat, self.sprintf, self.to_str_int, self.to_str_float, self.array_to_str_int, self.array_to_str_float, self.to_int, self.to_float, self.char_to_str]:
+            for func in [self.printf, self.malloc, self.free, self.strlen, self.strcpy, self.strcat, self.strcmp, self.sprintf, self.to_str_int, self.to_str_float, self.array_to_str_int, self.array_to_str_float, self.to_int, self.to_float, self.char_to_str]:
                 if func:
                     func.calling_convention = 'ccc'
                     func.linkage = 'external'
@@ -1558,7 +1562,7 @@ class LLVMCodeGenerator:
                 self.setconsolecp.linkage = 'external'
         else:
             # Adicionar atributos para outras plataformas
-            for func in [self.printf, self.malloc, self.free, self.strlen, self.strcpy, self.strcat, self.sprintf, self.to_str_int, self.to_str_float, self.array_to_str_int, self.array_to_str_float, self.to_int, self.to_float, self.char_to_str]:
+            for func in [self.printf, self.malloc, self.free, self.strlen, self.strcpy, self.strcat, self.strcmp, self.sprintf, self.to_str_int, self.to_str_float, self.array_to_str_int, self.array_to_str_float, self.to_int, self.to_float, self.char_to_str]:
                 func.calling_convention = 'ccc'
                 func.linkage = 'external'
         
@@ -1588,6 +1592,7 @@ class LLVMCodeGenerator:
         self.functions['strlen'] = self.strlen
         self.functions['strcpy'] = self.strcpy
         self.functions['strcat'] = self.strcat
+        self.functions['strcmp'] = self.strcmp
         
         # Funções de memória
         self.functions['malloc'] = self.malloc
@@ -4115,10 +4120,23 @@ class LLVMCodeGenerator:
                     else:
                         return self.builder.icmp_signed('!=', left, right, name="neq")
                 
-                # Para comparações de char, garantir que ambos são i8
-                if isinstance(left.type, ir.PointerType) and left.type.pointee == self.char_type:
+                # Verificar se ambos são ponteiros para char (strings)
+                left_is_string = isinstance(left.type, ir.PointerType) and left.type.pointee == self.char_type
+                right_is_string = isinstance(right.type, ir.PointerType) and right.type.pointee == self.char_type
+                
+                if left_is_string and right_is_string:
+                    # Comparação de strings usando strcmp
+                    cmp_result = self.builder.call(self.strcmp, [left, right])
+                    zero = ir.Constant(ir.IntType(32), 0)
+                    if node.operator == TokenType.EQ:
+                        return self.builder.icmp_signed('==', cmp_result, zero, name="eq")
+                    else:
+                        return self.builder.icmp_signed('!=', cmp_result, zero, name="neq")
+                
+                # Para comparações de char individuais, garantir que ambos são i8
+                if left_is_string and not right_is_string:
                     left = self.builder.load(left)
-                if isinstance(right.type, ir.PointerType) and right.type.pointee == self.char_type:
+                if right_is_string and not left_is_string:
                     right = self.builder.load(right)
                 
                 # Para comparações de char (i8), usar icmp sem sinal
