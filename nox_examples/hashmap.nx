@@ -15,7 +15,6 @@ end
 func is_key_in_node(node: ref Node, key: string) -> bool
     while node != null do
         if (node.key == key) then
-            print(node.key + "==" +key)
             return true
         end
         node = node.next
@@ -23,8 +22,27 @@ func is_key_in_node(node: ref Node, key: string) -> bool
     return false
 end
 
-// make_array(int, size, default)
-// make_array(Node, 16, null)
+
+func update_key(node: ref Node, key: string, value: string)
+    while node != null do
+        if (node.key == key) then
+            node.value = value
+            return
+        end
+        node = node.next
+    end
+end
+
+
+func get_key_in_node(node: ref Node, key: string) -> string
+    while node != null do
+        if (node.key == key) then
+            return node.value
+        end
+        node = node.next
+    end
+    return ""
+end
 
 let capacity: int = 16
 
@@ -47,14 +65,42 @@ end
 func push(key: string, value: string) -> void
     let local_hash: int = hash(key, capacity)
     print("Imprimindo a hash local")
-    print(local_hash)
+    print("hash:"+ to_str(local_hash))
     if buckets[local_hash] == null then
-        print("passei aqui")
+        print("Adicionando registro pela primeira vez nesta hash")
         buckets[local_hash] = Node(key, value, null)
         return
     end
     let node: Node = buckets[local_hash]
+    let key_present: bool = is_key_in_node(buckets[local_hash], key)
+    if key_present then
+        print("Registro já encontrado atualizando valor")
+        update_key(node, key, value)
+        return
+    end
+    print("Novo registro para essa hash")
+    append(node, key, value)
+end
+
+func get(key: string) -> string
+    let local_hash: int = hash(key, capacity)
+    if buckets[local_hash] != null then
+        let node: Node = buckets[local_hash]
+        let key_present: bool = is_key_in_node(buckets[local_hash], key)
+        if key_present then
+            return get_key_in_node(node, key)
+        end
+    end
+    return ""
 end
 
 push("celular", "android")
-print(is_key_in_node(buckets[2], "celular"))
+push("linguagem", "rust")
+let resultado: string = get("celular")
+print("get(celular): " +resultado)
+let resultado: string = get("linguagem")
+print("get(linguagem): " +resultado)
+print("Atualizando valor da linguagem")
+push("linguagem", "python")
+let resultado: string = get("linguagem")
+print("get(linguagem): " +resultado)
