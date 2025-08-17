@@ -1,0 +1,14 @@
+// Função hash polonomial
+func hash(chave: string, tamanho_da_tabela: int) -> int
+    //Função hash para uso em tabelas hash.
+    //Retorna um índice entre 0 e tamanho_tabela-1.
+    let hash_value: int = 0
+    let string_size: int = strlen(chave)
+    let i: int = 0
+    while string_size - i > 0 do
+        hash_value = (hash_value * 31 + ord(chave[i])) % tamanho_da_tabela
+        i = i + 1
+    end
+    return hash_value
+end
+
