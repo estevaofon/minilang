@@ -3160,6 +3160,15 @@ class LLVMCodeGenerator:
                         else:
                             return field_value
                 
+                # Verificar se o campo é um array
+                if (hasattr(self, 'struct_field_types') and 
+                    struct_type_name in self.struct_field_types and 
+                    node.field_name in self.struct_field_types[struct_type_name]):
+                    field_type = self.struct_field_types[struct_type_name][node.field_name]
+                    if isinstance(field_type, ArrayType):
+                        # Para arrays, retornar o ponteiro do campo (não carregar o valor)
+                        return field_ptr
+                
                 # Para outros tipos, carregar o valor do campo
                 field_value = self.builder.load(field_ptr)
                 
@@ -3815,8 +3824,57 @@ class LLVMCodeGenerator:
                                 func = self.to_str_float
                             else:
                                 func = self.to_str_int
+                    elif isinstance(arg_node, StructAccessNode):
+                        # Verificar se é acesso a campo de array de struct
+                        struct_name = arg_node.struct_name
+                        field_name = arg_node.field_name
+                        
+                        # Determinar o tipo de struct baseado na variável
+                        struct_type_name = None
+                        if struct_name in self.type_map:
+                            var_type = self.type_map[struct_name]
+                            if isinstance(var_type, StructType):
+                                struct_type_name = var_type.name
+                            elif isinstance(var_type, ReferenceType) and isinstance(var_type.target_type, StructType):
+                                struct_type_name = var_type.target_type.name
+                        
+                        # Verificar se o campo é um array
+                        if (struct_type_name and 
+                            hasattr(self, 'struct_field_types') and 
+                            struct_type_name in self.struct_field_types and 
+                            field_name in self.struct_field_types[struct_type_name]):
+                            field_type = self.struct_field_types[struct_type_name][field_name]
+                            if isinstance(field_type, ArrayType):
+                                # É um campo de array, usar array_to_str
+                                array_ptr = self._generate_expression(arg_node)
+                                array_size = ir.Constant(self.int_type, field_type.size if field_type.size else 0)
+                                
+                                # Fazer cast do ponteiro para array para ponteiro para elemento
+                                if isinstance(field_type.element_type, IntType):
+                                    element_ptr = self.builder.bitcast(array_ptr, self.int_type.as_pointer())
+                                    return self.builder.call(self.array_to_str_int, [element_ptr, array_size])
+                                elif isinstance(field_type.element_type, FloatType):
+                                    element_ptr = self.builder.bitcast(array_ptr, self.float_type.as_pointer())
+                                    return self.builder.call(self.array_to_str_float, [element_ptr, array_size])
+                                else:
+                                    # Para outros tipos, usar to_str_int como fallback
+                                    func = self.to_str_int
+                            else:
+                                # Não é um array, usar to_str normal
+                                arg = self._generate_expression(arg_node)
+                                if isinstance(arg.type, ir.DoubleType):
+                                    func = self.to_str_float
+                                else:
+                                    func = self.to_str_int
+                        else:
+                            # Não conseguiu determinar ou não é array, usar to_str normal
+                            arg = self._generate_expression(arg_node)
+                            if isinstance(arg.type, ir.DoubleType):
+                                func = self.to_str_float
+                            else:
+                                func = self.to_str_int
                     else:
-                        # Argumento não é um identificador, usar to_str normal
+                        # Argumento não é um identificador nem acesso a struct, usar to_str normal
                         arg = self._generate_expression(arg_node)
                         if isinstance(arg.type, ir.DoubleType):
                             func = self.to_str_float
