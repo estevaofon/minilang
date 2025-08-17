@@ -4968,13 +4968,3 @@ if __name__ == "__main__":
         import traceback
         traceback.print_exc()
         sys.exit(1)
-
-# Recursos implementados:
-# 1. ✅ Tipagem estática: let x: int = 10
-# 2. ✅ Arrays tipados: let arr: int[5] = [1, 2, 3, 4, 5]
-# 3. ✅ Funções tipadas: func add(a: int, b: int) -> int
-# 4. ✅ Variáveis globais: global x: int = 10
-# 5. ✅ Passagem de arrays para funções
-# 6. ✅ Acesso a variáveis globais dentro de funções
-# 7. ✅ Tipos: int, string, void, arrays
-# 8. ✅ QuickSort funcionando com arrays como parâmetros
