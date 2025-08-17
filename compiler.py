@@ -4757,6 +4757,184 @@ class NoxCompiler:
         self.lexer = None
         self.parser = None
         self.codegen = None
+    
+    def _perform_semantic_analysis(self, ast: ProgramNode):
+        """Realiza análise semântica para detectar erros de tipo antes da geração de código"""
+        self._check_function_return_types(ast)
+    
+    def _check_function_return_types(self, ast: ProgramNode):
+        """Verifica se os tipos de retorno das funções estão corretos"""
+        for stmt in ast.statements:
+            if isinstance(stmt, FunctionNode):
+                self._validate_function_returns(stmt)
+    
+    def _validate_function_returns(self, func_node: FunctionNode):
+        """Valida se os returns de uma função são compatíveis com seu tipo de retorno declarado"""
+        expected_return_type = func_node.return_type
+        
+        # Encontrar todos os statements de return na função
+        return_statements = self._find_return_statements(func_node.body)
+        
+        for return_stmt in return_statements:
+            if isinstance(expected_return_type, VoidType):
+                # Função void não deve retornar valores
+                if return_stmt.value is not None:
+                    self._semantic_error_for_return(
+                        f"Função '{func_node.name}' é declarada como 'void' mas está tentando retornar um valor. "
+                        f"Adicione '-> {self._suggest_return_type(return_stmt.value)}' após os parâmetros ou remova o valor de retorno.",
+                        return_stmt
+                    )
+            else:
+                # Função com tipo de retorno específico deve retornar valores
+                if return_stmt.value is None:
+                    self._semantic_error_for_return(
+                        f"Função '{func_node.name}' é declarada para retornar '{self._type_to_string(expected_return_type)}' "
+                        f"mas este return não possui valor. Use 'return <valor>' ou declare a função como '-> void'.",
+                        return_stmt
+                    )
+                else:
+                    # TODO: Aqui podemos adicionar verificação de compatibilidade de tipos específicos
+                    # Por enquanto, apenas verificamos se há valor quando esperado
+                    pass
+    
+    def _find_return_statements(self, statements: List[ASTNode]) -> List[ReturnNode]:
+        """Encontra recursivamente todos os statements de return em uma lista de statements"""
+        returns = []
+        for stmt in statements:
+            if isinstance(stmt, ReturnNode):
+                returns.append(stmt)
+            elif isinstance(stmt, IfNode):
+                returns.extend(self._find_return_statements(stmt.then_branch))
+                if stmt.else_branch:
+                    returns.extend(self._find_return_statements(stmt.else_branch))
+            elif isinstance(stmt, WhileNode):
+                returns.extend(self._find_return_statements(stmt.body))
+            # Adicionar outros tipos de statements que podem conter returns aninhados
+        return returns
+    
+    def _suggest_return_type(self, return_value: ASTNode) -> str:
+        """Sugere um tipo de retorno baseado no valor sendo retornado"""
+        if isinstance(return_value, NumberNode):
+            return "int"
+        elif isinstance(return_value, FloatNode):
+            return "float"
+        elif isinstance(return_value, StringNode):
+            return "string"
+        elif isinstance(return_value, BooleanNode):
+            return "bool"
+        elif isinstance(return_value, IdentifierNode):
+            # Para identificadores, tentar inferir o tipo baseado no contexto
+            return self._infer_identifier_type(return_value.name)
+        elif isinstance(return_value, StructAccessNode):
+            # Para acesso a campos de struct, tentar inferir baseado no campo
+            return self._infer_struct_field_type(return_value)
+        elif isinstance(return_value, BinaryOpNode):
+            # Para operações binárias, inferir baseado no tipo da operação
+            return self._infer_binary_op_type(return_value)
+        elif isinstance(return_value, CallNode):
+            # Para chamadas de função, verificar o tipo de retorno da função
+            return self._infer_function_call_type(return_value)
+        else:
+            return "tipo_apropriado"
+    
+    def _infer_identifier_type(self, identifier_name: str) -> str:
+        """Infere o tipo de um identificador baseado em heurísticas de nome"""
+        # Heurísticas baseadas em nomes comuns
+        if any(keyword in identifier_name.lower() for keyword in ['count', 'size', 'length', 'index', 'hash', 'value', 'i', 'j', 'k']):
+            return "int"
+        elif any(keyword in identifier_name.lower() for keyword in ['name', 'key', 'text', 'str', 'message']):
+            return "string"
+        elif any(keyword in identifier_name.lower() for keyword in ['found', 'valid', 'present', 'ok', 'flag']):
+            return "bool"
+        elif any(keyword in identifier_name.lower() for keyword in ['price', 'rate', 'percent', 'float']):
+            return "float"
+        else:
+            # Fallback: assumir string para casos não identificados
+            return "string"
+    
+    def _infer_struct_field_type(self, struct_access: StructAccessNode) -> str:
+        """Infere o tipo de um campo de struct baseado em heurísticas"""
+        field_name = struct_access.field_name.lower()
+        if any(keyword in field_name for keyword in ['key', 'name', 'value', 'text', 'str']):
+            return "string"
+        elif any(keyword in field_name for keyword in ['count', 'size', 'index', 'id']):
+            return "int"
+        elif any(keyword in field_name for keyword in ['found', 'valid', 'active']):
+            return "bool"
+        else:
+            return "string"  # Fallback comum para campos de struct
+    
+    def _infer_binary_op_type(self, binary_op: BinaryOpNode) -> str:
+        """Infere o tipo de uma operação binária"""
+        # Operações aritméticas geralmente retornam int ou float
+        if binary_op.operator in [TokenType.PLUS, TokenType.MINUS, TokenType.MULTIPLY, TokenType.DIVIDE, TokenType.MOD]:
+            # Se qualquer operando é float, resultado é float
+            left_type = self._suggest_return_type(binary_op.left)
+            right_type = self._suggest_return_type(binary_op.right)
+            if left_type == "float" or right_type == "float":
+                return "float"
+            else:
+                return "int"
+        # Operações de comparação retornam bool
+        elif binary_op.operator in [TokenType.EQ, TokenType.NEQ, TokenType.LT, TokenType.GT, TokenType.LTE, TokenType.GTE]:
+            return "bool"
+        # Operações lógicas retornam bool
+        elif binary_op.operator in [TokenType.AND, TokenType.OR]:
+            return "bool"
+        # Concatenação de strings
+        elif binary_op.operator == TokenType.CONCAT:
+            return "string"
+        else:
+            return "int"  # Fallback para operações aritméticas
+    
+    def _infer_function_call_type(self, call: CallNode) -> str:
+        """Infere o tipo de retorno de uma chamada de função baseado no nome"""
+        func_name = call.function_name.lower()
+        
+        # Funções conhecidas do sistema
+        if func_name in ['strlen', 'to_int', 'ord']:
+            return "int"
+        elif func_name in ['to_float']:
+            return "float"
+        elif func_name in ['to_str', 'to_str_int', 'to_str_float', 'char_to_str']:
+            return "string"
+        
+        # Heurísticas baseadas em nomes
+        elif any(keyword in func_name for keyword in ['get', 'find', 'search']) and any(keyword in func_name for keyword in ['key', 'value', 'name', 'text']):
+            return "string"
+        elif any(keyword in func_name for keyword in ['count', 'size', 'length', 'hash', 'index']):
+            return "int"
+        elif any(keyword in func_name for keyword in ['is', 'has', 'check', 'valid']):
+            return "bool"
+        else:
+            return "tipo_apropriado"
+    
+    def _type_to_string(self, type_obj: Type) -> str:
+        """Converte um objeto Type para sua representação string"""
+        if isinstance(type_obj, IntType):
+            return "int"
+        elif isinstance(type_obj, FloatType):
+            return "float"
+        elif isinstance(type_obj, StringType):
+            return "string"
+        elif isinstance(type_obj, BoolType):
+            return "bool"
+        elif isinstance(type_obj, VoidType):
+            return "void"
+        elif isinstance(type_obj, ArrayType):
+            return f"{self._type_to_string(type_obj.element_type)}[{type_obj.size or ''}]"
+        else:
+            return "unknown"
+    
+    def _semantic_error_for_return(self, message: str, node: ASTNode):
+        """Lança erro semântico específico para problemas de return com informações de contexto"""
+        if hasattr(node, 'line') and hasattr(node, 'column') and node.line is not None and node.column is not None:
+            source_line = None
+            if self.lexer and hasattr(self.lexer, 'source_lines') and node.line <= len(self.lexer.source_lines):
+                source_line = self.lexer.source_lines[node.line - 1]
+            raise NoxSemanticError(message, node.line, node.column, source_line)
+        else:
+            raise NoxSemanticError(message)
         
     def compile(self, source: str) -> str:
         try:
@@ -4767,6 +4945,9 @@ class NoxCompiler:
             # Análise sintática
             self.parser = Parser(tokens, self.lexer.source_lines)
             ast = self.parser.parse()
+            
+            # Análise semântica
+            self._perform_semantic_analysis(ast)
             
             # Geração de código
             self.codegen = LLVMCodeGenerator(self.lexer.source_lines)
