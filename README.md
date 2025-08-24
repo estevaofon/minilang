@@ -3,7 +3,8 @@
 A statically-typed programming language with LLVM backend compilation, featuring advanced data structures and algorithms.
 
 <p align="center">
-  <img width="300" height="300" alt="ChatGPT Image 15 de ago  de 2025, 22_43_56" src="https://github.com/user-attachments/assets/b923dd36-f4b7-4b83-972b-7ddd3547f2fe" />
+  <img width="300" height="300" alt="ChatGPT Image 24 de ago  de 2025, 10_52_55" src="https://github.com/user-attachments/assets/8af825b7-fc42-4e0b-8aab-da9bba99b6e0" />
+
 </p>
 
 ## Overview
