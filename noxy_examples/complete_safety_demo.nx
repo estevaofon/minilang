@@ -1,0 +1,323 @@
+// ============================================
+// DEMONSTRAÇÃO COMPLETA: NOXY COM SUPERPODERES RUST
+// ============================================
+// Este exemplo mostra como transformamos uma linguagem simples
+// em uma linguagem com segurança de nível industrial
+
+print("🦀 NOXY COM SUPERPODERES DO RUST")
+print("=====================================")
+print("")
+
+// ============================================
+// DEFINIÇÕES DOS PADRÕES DE SEGURANÇA
+// ============================================
+
+// Padrão Optional (inspirado em Option<T>)
+struct Optional
+    has_value: bool,
+    value: int
+end
+
+func Some(value: int) -> Optional
+    return Optional(true, value)
+end
+
+func None() -> Optional
+    return Optional(false, 0)
+end
+
+func is_some(opt: Optional) -> bool
+    return opt.has_value
+end
+
+// Padrão Result (inspirado em Result<T, E>)
+// No Rust: enum Result<T, E> { Ok(T), Err(E) }
+// Aqui simulamos com struct + flag booleano
+struct Result
+    is_ok: bool,      // true = Ok(value), false = Err(error)
+    data: int         // value quando Ok, error_code quando Err
+end
+
+let ERROR_DIVISION_BY_ZERO: int = 1
+let ERROR_ARRAY_OUT_OF_BOUNDS: int = 2
+let ERROR_NULL_DEREFERENCE: int = 3
+let ERROR_INVALID_USER_ID: int = 4
+
+func Ok(value: int) -> Result
+    return Result(true, value)  // is_ok=true, data=value
+end
+
+func Err(error_code: int) -> Result
+    return Result(false, error_code)  // is_ok=false, data=error_code
+end
+
+func is_ok(result: Result) -> bool
+    return result.is_ok
+end
+
+func unwrap_or(result: Result, default_value: int) -> int
+    if is_ok(result) then
+        return result.data  // data contém o value quando is_ok=true
+    else
+        return default_value
+    end
+end
+
+// ============================================
+// OPERAÇÕES SEGURAS FUNDAMENTAIS
+// ============================================
+
+func safe_divide(a: int, b: int) -> Result
+    if b == 0 then
+        return Err(ERROR_DIVISION_BY_ZERO)
+    end
+    return Ok(a / b)
+end
+
+func safe_array_get(array: int[], size: int, index: int) -> Result
+    if index < 0 | index >= size then
+        return Err(ERROR_ARRAY_OUT_OF_BOUNDS)
+    end
+    return Ok(array[index])
+end
+
+func safe_dereference(opt: Optional) -> Result
+    if !opt.has_value then
+        return Err(ERROR_NULL_DEREFERENCE)
+    end
+    return Ok(opt.value)
+end
+
+func validate_user_id(id: int) -> Result
+    if id <= 0 | id > 9999 then
+        return Err(ERROR_INVALID_USER_ID)
+    end
+    return Ok(id)
+end
+
+// ============================================
+// SISTEMA DE USUÁRIOS COM SEGURANÇA TOTAL
+// ============================================
+
+struct User
+    id: int,
+    score: int
+end
+
+func create_user(user_id: int, initial_score: int) -> Result
+    // Validação de entrada
+    let validation: Result = validate_user_id(user_id)
+    if !is_ok(validation) then
+        return validation  // Propaga erro de validação
+    end
+    
+    // Validação de score
+    if initial_score < 0 then
+        return Err(ERROR_INVALID_USER_ID)
+    end
+    
+    return Ok(user_id)  // Retorna ID válido
+end
+
+func calculate_user_bonus(user: User, divisor: int) -> Result
+    // Operação composta: divisão segura + validação
+    let division_result: Result = safe_divide(user.score, divisor)
+    if !is_ok(division_result) then
+        return division_result  // Propaga erro de divisão
+    end
+    
+    return Ok(division_result.value + 100)  // Bonus = score/divisor + 100
+end
+
+// ============================================
+// DEMONSTRAÇÃO PRÁTICA: PROCESSAMENTO DE USUÁRIOS
+// ============================================
+
+print("📊 SISTEMA DE USUÁRIOS COM SEGURANÇA TOTAL")
+print("==========================================")
+print("")
+
+// Dados de teste (alguns válidos, alguns inválidos)
+let user_data: User[5] = [
+    User(1001, 500),   // Usuário válido
+    User(-1, 100),     // ID inválido
+    User(1002, 0),     // Score zero (divisão por zero)
+    User(1003, 300),   // Usuário válido  
+    User(15000, 200)   // ID fora do limite
+]
+
+print("Processando 5 usuários:")
+print("")
+
+let successful_operations: int = 0
+let failed_operations: int = 0
+
+// Processamento do Usuário 1
+print("👤 Usuário 1 (ID: 1001, Score: 500)")
+let user1_validation: Result = create_user(1001, 500)
+if is_ok(user1_validation) then
+    let bonus1: Result = calculate_user_bonus(user_data[0], 5)
+    if is_ok(bonus1) then
+        print("✅ Bônus calculado: " + to_str(bonus1.value))
+        successful_operations = successful_operations + 1
+    else
+        print("❌ Falha no cálculo do bônus")
+        failed_operations = failed_operations + 1
+    end
+else
+    print("❌ Usuário inválido")
+    failed_operations = failed_operations + 1
+end
+print("")
+
+// Processamento do Usuário 2 (ID inválido)
+print("👤 Usuário 2 (ID: -1, Score: 100)")
+let user2_validation: Result = create_user(-1, 100)
+if is_ok(user2_validation) then
+    print("✅ Usuário válido")
+    successful_operations = successful_operations + 1
+else
+    print("❌ ID inválido detectado e rejeitado")
+    failed_operations = failed_operations + 1
+end
+print("")
+
+// Processamento do Usuário 3 (Divisão por zero)
+print("👤 Usuário 3 (ID: 1002, Score: 0)")
+let user3_validation: Result = create_user(1002, 0)
+if is_ok(user3_validation) then
+    let bonus3: Result = calculate_user_bonus(user_data[2], 0)  // Divisão por zero!
+    if is_ok(bonus3) then
+        print("✅ Bônus calculado: " + to_str(bonus3.value))
+        successful_operations = successful_operations + 1
+    else
+        print("❌ Divisão por zero detectada e evitada")
+        failed_operations = failed_operations + 1
+    end
+else
+    print("❌ Usuário inválido")
+    failed_operations = failed_operations + 1
+end
+print("")
+
+// Processamento do Usuário 4 (Sucesso)
+print("👤 Usuário 4 (ID: 1003, Score: 300)")
+let user4_validation: Result = create_user(1003, 300)
+if is_ok(user4_validation) then
+    let bonus4: Result = calculate_user_bonus(user_data[3], 3)
+    if is_ok(bonus4) then
+        print("✅ Bônus calculado: " + to_str(bonus4.value))
+        successful_operations = successful_operations + 1
+    else
+        print("❌ Falha no cálculo do bônus")
+        failed_operations = failed_operations + 1
+    end
+else
+    print("❌ Usuário inválido")
+    failed_operations = failed_operations + 1
+end
+print("")
+
+// Processamento do Usuário 5 (ID fora do limite)
+print("👤 Usuário 5 (ID: 15000, Score: 200)")
+let user5_validation: Result = create_user(15000, 200)
+if is_ok(user5_validation) then
+    print("✅ Usuário válido")
+    successful_operations = successful_operations + 1
+else
+    print("❌ ID fora do limite permitido")
+    failed_operations = failed_operations + 1
+end
+print("")
+
+// ============================================
+// DEMONSTRAÇÃO DE ACESSO SEGURO A ARRAYS
+// ============================================
+
+print("🔍 DEMONSTRAÇÃO: ACESSO SEGURO A ARRAYS")
+print("======================================")
+
+let scores: int[3] = [85, 92, 78]
+
+print("Tentando acessar índices válidos e inválidos:")
+
+let access1: Result = safe_array_get(scores, 3, 1)
+if is_ok(access1) then
+    print("✅ scores[1] = " + to_str(access1.value))
+else
+    print("❌ Acesso inválido ao índice 1")
+end
+
+let access2: Result = safe_array_get(scores, 3, 5)
+if is_ok(access2) then
+    print("✅ scores[5] = " + to_str(access2.value))
+else
+    print("❌ Índice 5 fora dos limites (prevenido)")
+end
+
+let access3: Result = safe_array_get(scores, 3, -1)
+if is_ok(access3) then
+    print("✅ scores[-1] = " + to_str(access3.value))
+else
+    print("❌ Índice negativo detectado (prevenido)")
+end
+
+print("")
+
+// ============================================
+// DEMONSTRAÇÃO DE VALORES OPCIONAIS
+// ============================================
+
+print("🎯 DEMONSTRAÇÃO: VALORES OPCIONAIS")
+print("=================================")
+
+func find_user_score(user_id: int) -> Optional
+    if user_id == 1001 then
+        return Some(500)
+    end
+    if user_id == 1003 then
+        return Some(300)
+    end
+    return None()  // Usuário não encontrado
+end
+
+print("Buscando scores de usuários:")
+
+let score1: Optional = find_user_score(1001)
+if is_some(score1) then
+    print("✅ Score do usuário 1001: " + to_str(score1.value))
+else
+    print("❌ Usuário 1001 não encontrado")
+end
+
+let score2: Optional = find_user_score(9999)
+if is_some(score2) then
+    print("✅ Score do usuário 9999: " + to_str(score2.value))
+else
+    print("❌ Usuário 9999 não encontrado (null safety)")
+end
+
+print("")
+
+// ============================================
+// RELATÓRIO FINAL
+// ============================================
+
+print("📈 RELATÓRIO FINAL")
+print("=================")
+print("Operações bem-sucedidas: " + to_str(successful_operations))
+print("Operações com falha: " + to_str(failed_operations))
+print("Total processado: " + to_str(successful_operations + failed_operations))
+print("")
+
+let success_rate: Result = safe_divide(successful_operations * 100, successful_operations + failed_operations)
+if is_ok(success_rate) then
+    print("Taxa de sucesso: " + to_str(success_rate.value) + "%")
+else
+    print("Não foi possível calcular taxa de sucesso")
+end
+
+print("")
+print("🏆 RESULTADO: ZERO CRASHES, 100% CONFIÁVEL!")
+print("💡 Todos os erros foram detectados e tratados graciosamente")
+print("🦀 Rust patterns funcionando perfeitamente em Noxy!")

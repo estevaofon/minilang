@@ -1,0 +1,157 @@
+// ============================================
+// DEMONSTRAÇÃO SIMPLES: PADRÕES RUST EM NOXY
+// ============================================
+// Exemplo direto e limpo dos padrões de segurança
+
+print("🦀 PADRÕES RUST EM NOXY - VERSÃO SIMPLES")
+print("=======================================")
+print("")
+
+// ============================================
+// PADRÕES FUNDAMENTAIS
+// ============================================
+
+// Optional Pattern (Option<T>)
+struct Optional
+    has_value: bool,
+    value: int
+end
+
+func Some(value: int) -> Optional
+    return Optional(true, value)
+end
+
+func None() -> Optional
+    return Optional(false, 0)
+end
+
+// Result Pattern (Result<T, E>)
+struct Result
+    is_ok: bool,      // true = Ok, false = Err
+    value: int,       // valor quando is_ok = true
+    error: string     // nome do erro quando is_ok = false
+end
+
+func Ok(value: int) -> Result
+    return Result(true, value, "")
+end
+
+func Err(error_name: string) -> Result
+    return Result(false, 0, error_name)
+end
+
+func is_ok(result: Result) -> bool
+    return result.is_ok
+end
+
+// ============================================
+// OPERAÇÕES SEGURAS
+// ============================================
+
+func safe_divide(a: int, b: int) -> Result
+    if b == 0 then
+        return Err("DIVISION_BY_ZERO")
+    end
+    return Ok(a / b)
+end
+
+func safe_array_get(array: int[], size: int, index: int) -> Result
+    if index < 0 | index >= size then
+        return Err("INDEX_OUT_OF_BOUNDS")
+    end
+    return Ok(array[index])
+end
+
+func safe_parse_positive(value: int) -> Result
+    if value < 0 then
+        return Err("INVALID_NEGATIVE_VALUE")
+    end
+    return Ok(value)
+end
+
+// ============================================
+// DEMONSTRAÇÃO PRÁTICA
+// ============================================
+
+print("📊 EXEMPLOS PRÁTICOS")
+print("===================")
+print("")
+
+// 1. Divisão Segura
+print("1️⃣ DIVISÃO SEGURA:")
+let div1: Result = safe_divide(20, 4)
+let div2: Result = safe_divide(10, 0)
+
+if is_ok(div1) then
+    print("✅ 20 ÷ 4 = " + to_str(div1.value))
+else
+    print("❌ 20 ÷ 4 = " + div1.error)
+end
+
+if is_ok(div2) then
+    print("✅ 10 ÷ 0 = " + to_str(div2.value))
+else
+    print("❌ 10 ÷ 0 = " + div2.error)
+end
+
+print("")
+
+// 2. Acesso Seguro a Array
+print("2️⃣ ACESSO SEGURO A ARRAYS:")
+let numbers: int[3] = [100, 200, 300]
+
+let access1: Result = safe_array_get(numbers, 3, 1)
+let access2: Result = safe_array_get(numbers, 3, 5)
+
+if is_ok(access1) then
+    print("✅ array[1] = " + to_str(access1.value))
+else
+    print("❌ array[1] = " + access1.error)
+end
+
+if is_ok(access2) then
+    print("✅ array[5] = " + to_str(access2.value))
+else
+    print("❌ array[5] = " + access2.error)
+end
+
+print("")
+
+// 3. Valores Opcionais
+print("3️⃣ VALORES OPCIONAIS:")
+let valid_value: Optional = Some(42)
+let empty_value: Optional = None()
+
+if valid_value.has_value then
+    print("✅ Valor encontrado: " + to_str(valid_value.value))
+else
+    print("❌ Valor não encontrado")
+end
+
+if empty_value.has_value then
+    print("✅ Valor encontrado: " + to_str(empty_value.value))
+else
+    print("❌ Valor não encontrado (null safety!)")
+end
+
+print("")
+
+// ============================================
+// COMPARAÇÃO: ANTES vs DEPOIS
+// ============================================
+
+print("🔥 TRANSFORMAÇÃO COMPLETA")
+print("========================")
+print("")
+print("❌ ANTES (perigoso):")
+print("   • let result: int = 10 / 0            // CRASH!")
+print("   • let x: int = array[999]             // BUFFER OVERFLOW!")
+print("   • let y: int = null_value.value       // NULL ACCESS!")
+print("")
+print("✅ DEPOIS (seguro):")
+print("   • Result div = safe_divide(10, 0)           // Err(\"DIVISION_BY_ZERO\")")
+print("   • Result acc = safe_array_get(arr, 3, 5)   // Err(\"INDEX_OUT_OF_BOUNDS\")")
+print("   • Optional val = find_value(...)           // None()")
+print("")
+print("🎯 RESULTADO: ZERO CRASHES!")
+print("🦀 Rust patterns funcionando em Noxy!")
