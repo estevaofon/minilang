@@ -1,5 +1,5 @@
 // ============================================
-// TESTES UNITÁRIOS AUTOMATIZADOS NOX
+// TESTES UNITÁRIOS AUTOMATIZADOS NOXY
 // ============================================
 
 print("=== INICIANDO TESTES UNITÁRIOS AUTOMATIZADOS ===")
@@ -747,4 +747,4 @@ print("✓ Construtores com diferentes tipos funcionando")
 print("✓ Busca binária com arrays estáticos e dinâmicos funcionando")
 print("✓ Todas as operações básicas funcionando")
 print("")
-print("🎉 NOX FUNCIONANDO COM SUCESSO!") 
+print("🎉 NOXY FUNCIONANDO COM SUCESSO!") 

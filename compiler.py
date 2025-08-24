@@ -1,5 +1,5 @@
-# Nox Compiler
-# Compilador para a linguagem Nox com tipagem estática
+# Noxy Compiler
+# Compilador para a linguagem Noxy com tipagem estática
 
 import re
 import sys
@@ -10,8 +10,8 @@ import llvmlite.ir as ir
 import llvmlite.binding as llvm
 
 # Classes de erro personalizadas para melhor diagnóstico
-class NoxError(Exception):
-    """Classe base para todos os erros do compilador Nox"""
+class NoxyError(Exception):
+    """Classe base para todos os erros do compilador Noxy"""
     def __init__(self, message: str, line: int = None, column: int = None, source_line: str = None):
         self.message = message
         self.line = line
@@ -30,19 +30,19 @@ class NoxError(Exception):
             return error_msg
         return f"Erro: {self.message}"
 
-class NoxSyntaxError(NoxError):
+class NoxySyntaxError(NoxyError):
     """Erro de sintaxe na análise do código"""
     pass
 
-class NoxSemanticError(NoxError):
+class NoxySemanticError(NoxyError):
     """Erro semântico (tipos, variáveis não declaradas, etc.)"""
     pass
 
-class NoxCodeGenError(NoxError):
+class NoxyCodeGenError(NoxyError):
     """Erro na geração de código LLVM"""
     pass
 
-class NoxRuntimeError(NoxError):
+class NoxyRuntimeError(NoxyError):
     """Erro de tempo de execução"""
     pass
 
@@ -273,7 +273,7 @@ class Lexer:
             self._advance()  # Pular aspas final
         else:
             source_line = self.source_lines[self.line - 1] if self.line <= len(self.source_lines) else ""
-            raise NoxSyntaxError(
+            raise NoxySyntaxError(
                 "String não terminada - esperado '\"'",
                 self.line, self.column, source_line
             )
@@ -391,7 +391,7 @@ class Lexer:
             self._advance()
         else:
             source_line = self.source_lines[self.line - 1] if self.line <= len(self.source_lines) else ""
-            raise NoxSyntaxError(
+            raise NoxySyntaxError(
                 f"Caractere inválido '{char}'",
                 self.line, self.column, source_line
             )
@@ -613,7 +613,7 @@ class ErrorContext:
         return self
         
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type and issubclass(exc_type, Exception) and not issubclass(exc_type, (NoxError,)):
+        if exc_type and issubclass(exc_type, Exception) and not issubclass(exc_type, (NoxyError,)):
             # Capturar exceções genéricas e convertê-las em erros com localização
             if self.current_node and self.current_node.has_location():
                 # Usar localização do nó atual
@@ -622,12 +622,12 @@ class ErrorContext:
                     if self.current_node.line <= len(self.parser.source_lines)
                     else ""
                 )
-                raise NoxSemanticError(str(exc_val), self.current_node.line, self.current_node.column, source_line) from exc_val
+                raise NoxySemanticError(str(exc_val), self.current_node.line, self.current_node.column, source_line) from exc_val
             else:
                 # Usar token atual do parser
                 token = self.parser._current_token()
                 source_line = self.parser._get_source_line(token.line)
-                raise NoxSemanticError(str(exc_val), token.line, token.column, source_line) from exc_val
+                raise NoxySemanticError(str(exc_val), token.line, token.column, source_line) from exc_val
         return False
 
 class Parser:
@@ -665,9 +665,9 @@ class Parser:
         if self.position > 0:
             token = self.tokens[self.position - 1]
             source_line = self._get_source_line(token.line)
-            raise NoxSyntaxError(message, token.line, token.column, source_line)
+            raise NoxySyntaxError(message, token.line, token.column, source_line)
         else:
-            raise NoxSyntaxError(f"Erro no início do arquivo: {message}")
+            raise NoxySyntaxError(f"Erro no início do arquivo: {message}")
     
     def _add_location_info(self, node: ASTNode, token: Token = None) -> ASTNode:
         """Adiciona informações de linha e coluna ao nó AST"""
@@ -690,9 +690,9 @@ class Parser:
         """Lança um erro semântico com informações de linha e coluna"""
         if node and node.line is not None and node.column is not None:
             source_line = self._get_source_line(node.line)
-            raise NoxSemanticError(message, node.line, node.column, source_line)
+            raise NoxySemanticError(message, node.line, node.column, source_line)
         else:
-            raise NoxSemanticError(message)
+            raise NoxySemanticError(message)
         
     def parse(self) -> ProgramNode:
         statements = []
@@ -1384,7 +1384,7 @@ class CodeGenContext:
         return self
         
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type and not issubclass(exc_type, (NoxError,)):
+        if exc_type and not issubclass(exc_type, (NoxyError,)):
             # Capturar erros de geração de código e adicionar localização
             if self.node and self.node.has_location():
                 source_line = self.node.source_line or (
@@ -1392,9 +1392,9 @@ class CodeGenContext:
                     if self.node.line <= len(self.generator.source_lines)
                     else ""
                 )
-                raise NoxCodeGenError(str(exc_val), self.node.line, self.node.column, source_line) from exc_val
+                raise NoxyCodeGenError(str(exc_val), self.node.line, self.node.column, source_line) from exc_val
             else:
-                raise NoxCodeGenError(str(exc_val)) from exc_val
+                raise NoxyCodeGenError(str(exc_val)) from exc_val
         self.generator._current_node = None
         return False
 
@@ -1418,7 +1418,7 @@ class LLVMCodeGenerator:
             self.triple = default_triple
         
         # Criar módulo e builder
-        self.module = ir.Module(name="nox_module")
+        self.module = ir.Module(name="noxy_module")
         self.module.triple = self.triple
         
         # Configurar data layout baseado na plataforma (preferir código estático para GCC/MinGW)
@@ -1463,7 +1463,7 @@ class LLVMCodeGenerator:
         if node and node.line is not None and node.column is not None:
             if node.line <= len(self.source_lines):
                 source_line = self.source_lines[node.line - 1]
-                raise NoxSemanticError(message, node.line, node.column, source_line)
+                raise NoxySemanticError(message, node.line, node.column, source_line)
         raise NoxSemanticError(message)
     
     def _with_context(self, node: ASTNode = None):
@@ -4752,7 +4752,7 @@ def execute_ir(llvm_ir: str):
     return result
 
 # Compilador principal
-class NoxCompiler:
+class NoxyCompiler:
     def __init__(self):
         self.lexer = None
         self.parser = None
@@ -4932,9 +4932,9 @@ class NoxCompiler:
             source_line = None
             if self.lexer and hasattr(self.lexer, 'source_lines') and node.line <= len(self.lexer.source_lines):
                 source_line = self.lexer.source_lines[node.line - 1]
-            raise NoxSemanticError(message, node.line, node.column, source_line)
+            raise NoxySemanticError(message, node.line, node.column, source_line)
         else:
-            raise NoxSemanticError(message)
+            raise NoxySemanticError(message)
         
     def compile(self, source: str) -> str:
         try:
@@ -4954,12 +4954,12 @@ class NoxCompiler:
             llvm_module = self.codegen.generate(ast)
             
             return str(llvm_module)
-        except NoxError:
-            # Re-lançar erros Nox sem modificação
+        except NoxyError:
+            # Re-lançar erros Noxy sem modificação
             raise
         except Exception as e:
-            # Capturar outros erros e convertê-los em NoxError
-            raise NoxError(f"Erro interno do compilador: {str(e)}")
+            # Capturar outros erros e convertê-los em NoxyError
+            raise NoxyError(f"Erro interno do compilador: {str(e)}")
     
     def compile_to_object(self, source: str, output_file: str):
         try:
@@ -5010,20 +5010,20 @@ class NoxCompiler:
                         llvm_line = int(line_match.group(1))
                         # Tentar mapear de volta para o código fonte
                         # (isso é uma aproximação, pois o mapeamento exato seria complexo)
-                        raise NoxCodeGenError(
+                        raise NoxyCodeGenError(
                             f"Erro na geração de código LLVM: {error_msg}\n"
-                            f"Isso pode ser causado por um problema no código Nox, como:\n"
+                            f"Isso pode ser causado por um problema no código Noxy, como:\n"
                             f"- Acesso incorreto a campos de struct\n"
                             f"- Tipos incompatíveis em expressões\n"
                             f"- Uso de variáveis não declaradas"
                         )
-                raise NoxCodeGenError(f"Erro na geração de código LLVM: {error_msg}")
+                raise NoxyCodeGenError(f"Erro na geração de código LLVM: {error_msg}")
             
             print("Verificando módulo...")
             try:
                 mod.verify()
             except Exception as e:
-                raise NoxCodeGenError(f"Código LLVM inválido gerado: {str(e)}")
+                raise NoxyCodeGenError(f"Código LLVM inválido gerado: {str(e)}")
             
             # Definir o triple e data layout
             mod.triple = triple
@@ -5047,14 +5047,14 @@ class NoxCompiler:
             
             print(f"Arquivo objeto criado com sucesso: {output_file}")
             
-        except NoxError as e:
+        except NoxyError as e:
             print(f"Erro de compilação: {e}")
             raise
         except Exception as e:
             print(f"Erro interno na geração do objeto: {e}")
             import traceback
             traceback.print_exc()
-            raise NoxCodeGenError(f"Erro interno na geração do objeto: {str(e)}")
+            raise NoxyCodeGenError(f"Erro interno na geração do objeto: {str(e)}")
 
 def read_source_file(file_path: str) -> str:
     """Lê o conteúdo de um arquivo de código fonte."""
@@ -5070,7 +5070,7 @@ def read_source_file(file_path: str) -> str:
 
 def print_usage():
     """Imprime informações de uso do programa."""
-    print("Nox Compiler")
+    print("Noxy Compiler")
     print("Uso:")
     print("  python compiler.py <arquivo.nx>                    # Executar programa")
     print("  python compiler.py --compile <arquivo.nx>          # Gerar arquivo objeto")
@@ -5109,7 +5109,7 @@ if __name__ == "__main__":
     source_code = read_source_file(source_file)
     
     # Compilar
-    compiler = NoxCompiler()
+    compiler = NoxyCompiler()
     
     try:
         # Gerar IR LLVM
@@ -5140,23 +5140,23 @@ if __name__ == "__main__":
                 import traceback
                 traceback.print_exc()
         
-    except NoxSyntaxError as e:
+    except NoxySyntaxError as e:
         print(f"ERRO DE SINTAXE:")
         print(e)
         sys.exit(1)
-    except NoxSemanticError as e:
+    except NoxySemanticError as e:
         print(f"ERRO SEMÂNTICO:")
         print(e)
         sys.exit(1)
-    except NoxCodeGenError as e:
+    except NoxyCodeGenError as e:
         print(f"ERRO DE GERAÇÃO DE CÓDIGO:")
         print(e)
         sys.exit(1)
-    except NoxRuntimeError as e:
+    except NoxyRuntimeError as e:
         print(f"ERRO DE EXECUÇÃO:")
         print(e)
         sys.exit(1)
-    except NoxError as e:
+    except NoxyError as e:
         print(f"ERRO:")
         print(e)
         sys.exit(1)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Script para testar todas as mensagens de erro do compilador Nox
+Script para testar todas as mensagens de erro do compilador Noxy
 Executa cada arquivo de teste e captura a saída para análise
 """
 

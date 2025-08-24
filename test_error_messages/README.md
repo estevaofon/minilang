@@ -1,6 +1,6 @@
-# 🧪 Testes de Mensagens de Erro - Compilador Nox
+# 🧪 Testes de Mensagens de Erro - Compilador Noxy
 
-Esta pasta contém uma suíte completa de testes para validar o sistema de relatório de erros do compilador Nox.
+Esta pasta contém uma suíte completa de testes para validar o sistema de relatório de erros do compilador Noxy.
 
 ## 📋 Tipos de Erro Testados
 
@@ -33,7 +33,7 @@ Esta pasta contém uma suíte completa de testes para validar o sistema de relat
 ### Executar Teste Individual
 ```bash
 # Navegar para o diretório do projeto
-cd D:\OneDrive\Documentos\python_projects\nox
+cd D:\OneDrive\Documentos\python_projects\noxy
 
 # Testar um arquivo específico
 uv run python compiler.py --compile test_error_messages/01_syntax_error_missing_let.nx

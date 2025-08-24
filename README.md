@@ -1,4 +1,4 @@
-# Nox
+# Noxy
 
 A statically-typed programming language with LLVM backend compilation, featuring advanced data structures and algorithms.
 
@@ -8,7 +8,7 @@ A statically-typed programming language with LLVM backend compilation, featuring
 
 ## Overview
 
-Nox is a powerful programming language designed for educational purposes and practical applications. It features static typing, LLVM-based compilation, and supports advanced programming constructs including structs, auto-referencing, dynamic assignments, and complex algorithms.
+Noxy is a powerful programming language designed for educational purposes and practical applications. It features static typing, LLVM-based compilation, and supports advanced programming constructs including structs, auto-referencing, dynamic assignments, and complex algorithms.
 
 ## Features
 
@@ -41,7 +41,7 @@ Nox is a powerful programming language designed for educational purposes and pra
 1. Clone the repository:
 ```bash
 git clone <repository-url>
-cd nox
+cd noxy
 ```
 
 2. Install dependencies using uv:
@@ -53,7 +53,7 @@ uv sync
 
 ### Compiling and Running Programs
 
-First, compile the source code into an object file using the Nox compiler:
+First, compile the source code into an object file using the Noxy compiler:
 
 ```bash
 uv run python compiler.py --compile <source_file.nx>
@@ -85,7 +85,7 @@ gcc -o testes.exe output.obj casting_functions.c
 
 ### Variable Declarations
 
-```nox
+```noxy
 let x: int = 42
 let y: float = 3.14
 let texto: string = "Hello, World!"
@@ -94,7 +94,7 @@ let ativo: bool = true
 
 ### Arrays
 
-```nox
+```noxy
 let numeros: int[5] = [1, 2, 3, 4, 5]
 let matriz: float[3] = [1.1, 2.2, 3.3]
 let vazio: int[0] = []
@@ -105,7 +105,7 @@ let tamanho: int = length(numeros)  // Returns 5
 
 ### Structs
 
-```nox
+```noxy
 struct Pessoa
     nome: string,
     idade: int,
@@ -122,7 +122,7 @@ pessoa.nome = "João Silva"
 
 ### Auto-Referencing Structs
 
-```nox
+```noxy
 struct TreeNode
     valor: int,
     esquerda: ref TreeNode,
@@ -139,7 +139,7 @@ raiz.esquerda = ref filho_esq
 
 ### Functions
 
-```nox
+```noxy
 func add(a: int, b: int) -> int
     return a + b
 end
@@ -168,7 +168,7 @@ end
 
 ### Control Flow
 
-```nox
+```noxy
 if x > 10 then
     print("x is greater than 10")
 else
@@ -183,9 +183,9 @@ end
 
 ### Type Casting
 
-Nox provides powerful type conversion functions centered around the universal `to_str` function:
+Noxy provides powerful type conversion functions centered around the universal `to_str` function:
 
-```nox
+```noxy
 // Converting integers to string
 let num: int = 42
 let str_from_int: string = to_str(num)  // "42"
@@ -208,7 +208,7 @@ let float_from_int: float = to_float(num)   // 42.000000
 
 ### String Operations
 
-```nox
+```noxy
 let str1: string = "Hello"
 let str2: string = "World"
 let result: string = str1 + " " + str2  // String concatenation
@@ -218,8 +218,8 @@ let result: string = str1 + " " + str2  // String concatenation
 
 Create a file `hello.nx`:
 
-```nox
-print("Hello from Nox!")
+```noxy
+print("Hello from Noxy!")
 
 // Basic operations
 let x: int = 10

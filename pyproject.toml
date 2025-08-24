@@ -1,5 +1,5 @@
 [project]
-name = "nox"
+name = "noxy"
 version = "2.0.0"
 description = "A statically-typed programming language with LLVM backend compilation"
 readme = "README.md"

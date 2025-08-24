@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Script para executar todos os arquivos de exemplo Nox
+Script para executar todos os arquivos de exemplo Noxy
 Executa cada arquivo sequencialmente com um intervalo de 3 segundos entre execuções
 """
 
@@ -10,10 +10,10 @@ import time
 import sys
 from pathlib import Path
 
-def run_nox_file(file_path):
+def run_noxy_file(file_path):
     """
-    Executa um arquivo Nox usando o pipeline completo:
-    1. Compila com o compilador Nox
+    Executa um arquivo Noxy usando o pipeline completo:
+    1. Compila com o compilador Noxy
     2. Link com as funções de casting em C
     3. Executa o programa resultante
     """
@@ -24,7 +24,7 @@ def run_nox_file(file_path):
     
     try:
         # Comando completo para compilar e executar
-        cmd = f'uv run python compiler.py --compile ".\\nox_examples\\{file_name}" && gcc -mcmodel=large casting_functions.c output.obj -o programa.exe && .\\programa.exe'
+        cmd = f'uv run python compiler.py --compile ".\\noxy_examples\\{file_name}" && gcc -mcmodel=large casting_functions.c output.obj -o programa.exe && .\\programa.exe'
         
         print(f"📝 Comando: {cmd}")
         print(f"⏳ Executando...")
@@ -66,13 +66,13 @@ def run_nox_file(file_path):
 
 def main():
     """Função principal"""
-    print("🎯 Script de Execução de Exemplos Nox")
+    print("🎯 Script de Execução de Exemplos Noxy")
     print("=" * 60)
     
     # Verificar se estamos no diretório correto
-    if not os.path.exists("nox_examples"):
-        print("❌ Diretório 'nox_examples' não encontrado!")
-        print("   Certifique-se de executar este script na raiz do projeto Nox")
+    if not os.path.exists("noxy_examples"):
+        print("❌ Diretório 'noxy_examples' não encontrado!")
+        print("   Certifique-se de executar este script na raiz do projeto Noxy")
         sys.exit(1)
     
     # Verificar se os arquivos necessários existem
@@ -82,12 +82,12 @@ def main():
             print(f"❌ Arquivo necessário '{file}' não encontrado!")
             sys.exit(1)
     
-    # Obter lista de arquivos .nx na pasta nox_examples
-    examples_dir = Path("nox_examples")
+    # Obter lista de arquivos .nx na pasta noxy_examples
+    examples_dir = Path("noxy_examples")
     nx_files = sorted(examples_dir.glob("*.nx"))
     
     if not nx_files:
-        print("❌ Nenhum arquivo .nx encontrado em nox_examples/")
+        print("❌ Nenhum arquivo .nx encontrado em noxy_examples/")
         sys.exit(1)
     
     print(f"📁 Encontrados {len(nx_files)} arquivos de exemplo:")
@@ -117,7 +117,7 @@ def main():
     for i, file_path in enumerate(nx_files, 1):
         print(f"\n📊 Progresso: {i}/{len(nx_files)}")
         
-        if run_nox_file(file_path):
+        if run_noxy_file(file_path):
             successful += 1
         else:
             failed += 1

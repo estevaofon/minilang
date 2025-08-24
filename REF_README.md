@@ -1,6 +1,6 @@
-# Nox: When to use the `ref` keyword
+# Noxy: When to use the `ref` keyword
 
-This guide explains concisely when and how to use `ref` in Nox, with practical examples and common pitfalls.
+This guide explains concisely when and how to use `ref` in Noxy, with practical examples and common pitfalls.
 
 ## What is `ref`?
 
@@ -11,7 +11,7 @@ This guide explains concisely when and how to use `ref` in Nox, with practical e
 ## Use `ref` for these cases
 
 - Self-referencing or cross-referencing struct fields
-```nox
+```noxy
 struct Node
     value: int,
     next: ref Node
@@ -23,7 +23,7 @@ n1.next = ref n2  // use the ref operator when assigning to a ref field
 ```
 
 - Function parameters when you need to mutate a struct argument
-```nox
+```noxy
 func append(node: ref Node, value: int)
     if node.next == null then
         node.next = ref Node(value, null)
@@ -35,7 +35,7 @@ end
 Without `ref` on the parameter, mutations inside the function will not affect the caller’s value.
 
 - Passing and mutating container-like structs (e.g., dynamic arrays modeled as a struct)
-```nox
+```noxy
 struct DynamicArray
     elements: int[100],
     capacity: int,
@@ -52,7 +52,7 @@ end
 ```
 
 - Variables that store references to structs and may be `null` or reassigned
-```nox
+```noxy
 let cur: ref Node = null
 if cur == null then
     cur = ref n1
@@ -60,7 +60,7 @@ end
 ```
 
 - Return types when you want to return an existing reference
-```nox
+```noxy
 func find(head: ref Node, value: int) -> ref Node
     let cur: ref Node = head
     while cur != null do
@@ -82,25 +82,25 @@ end
 ## Essential usage patterns
 
 - Assigning to `ref` fields/variables requires the `ref` operator on the right-hand side
-```nox
+```noxy
 root.left = ref childLeft   // correct
 // root.left = childLeft    // incorrect
 ```
 
 - Comparing to `null`
-```nox
+```noxy
 if node.next == null then
     // ...
 end
 ```
 
 - Reading a `ref` field does not require the operator
-```nox
+```noxy
 let nextNode: ref Node = node.next
 ```
 
 - Mutating via `ref` parameter
-```nox
+```noxy
 struct Counter
     value: int
 end
@@ -113,12 +113,12 @@ end
 ## Common mistakes and fixes
 
 - Forgetting the `ref` operator when assigning a `ref` destination
-```nox
+```noxy
 node.next = ref other
 ```
 
 - Declaring a parameter without `ref` but expecting call-site mutation
-```nox
+```noxy
 // wrong: mutations won’t escape the function
 func set_value(n: Node, v: int)
     n.value = v
