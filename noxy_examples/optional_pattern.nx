@@ -1,0 +1,166 @@
+// ============================================
+// PADRÃO OPTIONAL/MAYBE - INSPIRADO EM RUST
+// ============================================
+// Este exemplo demonstra como implementar o padrão Optional
+// para ter null safety sem null pointer exceptions
+
+print("=== PADRÃO OPTIONAL EM NOX ===")
+print("")
+
+// Struct que representa um valor que pode ou não existir
+struct Optional
+    has_value: bool,    // true se contém valor, false se é "None"
+    value: int          // o valor (apenas válido se has_value = true)
+end
+
+// Funções construtoras para criar Optional
+func Some(value: int) -> Optional
+    return Optional(true, value)
+end
+
+func None() -> Optional
+    return Optional(false, 0)  // valor 0 é ignorado quando has_value = false
+end
+
+// Função para verificar se tem valor (equivale ao is_some() do Rust)
+func is_some(opt: Optional) -> bool
+    return opt.has_value
+end
+
+// Função para verificar se está vazio (equivale ao is_none() do Rust)
+func is_none(opt: Optional) -> bool
+    return !opt.has_value
+end
+
+// Função para extrair valor (equivale ao unwrap() do Rust)
+// CUIDADO: só use se tiver certeza que has_value = true
+func unwrap(opt: Optional) -> int
+    if is_none(opt) then
+        print("ERRO: Tentativa de unwrap em Optional vazio!")
+        return -1  // valor de erro
+    end
+    return opt.value
+end
+
+// Função segura para extrair valor com default
+func unwrap_or(opt: Optional, default_value: int) -> int
+    if is_some(opt) then
+        return opt.value
+    else
+        return default_value
+    end
+end
+
+// Função para imprimir Optional de forma amigável
+func print_optional(name: string, opt: Optional)
+    print(name + ": ")
+    if is_some(opt) then
+        print("Some(" + to_str(opt.value) + ")")
+    else
+        print("None")
+    end
+end
+
+// ============================================
+// EXEMPLOS PRÁTICOS
+// ============================================
+
+print(">>> Exemplo 1: Criando Optionals")
+let valor_presente: Optional = Some(42)
+let valor_ausente: Optional = None()
+
+print_optional("valor_presente", valor_presente)
+print_optional("valor_ausente", valor_ausente)
+print("")
+
+print(">>> Exemplo 2: Verificações Seguras")
+if is_some(valor_presente) then
+    print("Valor encontrado: " + to_str(valor_presente.value))
+else
+    print("Nenhum valor")
+end
+
+if is_none(valor_ausente) then
+    print("Como esperado, valor_ausente está vazio")
+end
+print("")
+
+print(">>> Exemplo 3: Extraindo Valores Safely")
+let resultado1: int = unwrap_or(valor_presente, 999)
+let resultado2: int = unwrap_or(valor_ausente, 999)
+
+print("unwrap_or(valor_presente, 999): " + to_str(resultado1))
+print("unwrap_or(valor_ausente, 999): " + to_str(resultado2))
+print("")
+
+// ============================================
+// FUNÇÃO QUE PODE FALHAR - DIVISÃO SEGURA
+// ============================================
+
+func divisao_segura(dividendo: int, divisor: int) -> Optional
+    if divisor == 0 then
+        print("Erro: divisão por zero!")
+        return None()
+    end
+    return Some(dividendo / divisor)
+end
+
+print(">>> Exemplo 4: Função que Pode Falhar")
+let div1: Optional = divisao_segura(10, 2)
+let div2: Optional = divisao_segura(10, 0)
+
+print_optional("10 / 2", div1)
+print_optional("10 / 0", div2)
+
+// Uso seguro dos resultados
+if is_some(div1) then
+    print("Resultado da divisão: " + to_str(div1.value))
+end
+
+if is_none(div2) then
+    print("Divisão falhou, usando valor padrão")
+    let valor_padrao: int = unwrap_or(div2, -1)
+    print("Valor padrão: " + to_str(valor_padrao))
+end
+print("")
+
+// ============================================
+// BUSCA EM ARRAY - EXEMPLO PRÁTICO
+// ============================================
+
+func buscar_no_array(array: int[], tamanho: int, valor_procurado: int) -> Optional
+    let i: int = 0
+    while i < tamanho do
+        if array[i] == valor_procurado then
+            return Some(i)  // retorna o índice onde foi encontrado
+        end
+        i = i + 1
+    end
+    return None()  // não encontrado
+end
+
+print(">>> Exemplo 5: Busca em Array")
+let numeros: int[5] = [10, 20, 30, 40, 50]
+
+let pos1: Optional = buscar_no_array(numeros, 5, 30)
+let pos2: Optional = buscar_no_array(numeros, 5, 99)
+
+print_optional("Posição do 30", pos1)
+print_optional("Posição do 99", pos2)
+
+// Uso dos resultados
+if is_some(pos1) then
+    print("Valor 30 encontrado no índice: " + to_str(pos1.value))
+end
+
+if is_none(pos2) then
+    print("Valor 99 não foi encontrado no array")
+end
+
+print("")
+print("=== VANTAGENS DO PADRÃO OPTIONAL ===")
+print("1. NULL SAFETY: Impossível esquecer de verificar se valor existe")
+print("2. TYPE SAFETY: O compilador força verificações explícitas") 
+print("3. CLAREZA: Código autodocumentado sobre valores que podem faltar")
+print("4. MENOS BUGS: Elimina null pointer exceptions")
+print("5. INSPIRADO EM RUST: Padrão usado em linguagens modernas")

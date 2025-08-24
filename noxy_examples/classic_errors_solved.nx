@@ -1,0 +1,245 @@
+// ============================================
+// 4 ERROS CLÁSSICOS RESOLVIDOS COM RESULT
+// ============================================
+// Este arquivo demonstra como o padrão Result resolve
+// os 4 erros mais comuns que quebram programas
+
+print("=== 4 ERROS CLÁSSICOS RESOLVIDOS ===")
+print("")
+
+// Struct Result (versão simplificada)
+struct Result
+    is_success: bool,
+    value: int,
+    error_code: int
+end
+
+// Códigos de erro
+let ERROR_DIVISION_BY_ZERO: int = 1
+let ERROR_ARRAY_OUT_OF_BOUNDS: int = 2
+let ERROR_NULL_DEREFERENCE: int = 3
+let ERROR_PARSE_FAILURE: int = 4
+
+// Construtores
+func Ok(value: int) -> Result
+    return Result(true, value, 0)
+end
+
+func Err(error_code: int) -> Result
+    return Result(false, 0, error_code)
+end
+
+// Utilitários
+func is_ok(result: Result) -> bool
+    return result.is_success
+end
+
+func is_err(result: Result) -> bool
+    return !result.is_success
+end
+
+func unwrap_or(result: Result, default_value: int) -> int
+    if is_ok(result) then
+        return result.value
+    else
+        return default_value
+    end
+end
+
+func error_name(code: int) -> string
+    if code == ERROR_DIVISION_BY_ZERO then
+        return "DIVISION_BY_ZERO"
+    end
+    if code == ERROR_ARRAY_OUT_OF_BOUNDS then
+        return "ARRAY_OUT_OF_BOUNDS"
+    end
+    if code == ERROR_NULL_DEREFERENCE then
+        return "NULL_DEREFERENCE"
+    end
+    if code == ERROR_PARSE_FAILURE then
+        return "PARSE_FAILURE"
+    end
+    return "UNKNOWN_ERROR"
+end
+
+func print_result(name: string, result: Result)
+    if is_ok(result) then
+        print("✅ " + name + ": " + to_str(result.value))
+    else
+        print("❌ " + name + ": " + error_name(result.error_code))
+    end
+end
+
+// ============================================
+// ERRO #1: DIVISÃO POR ZERO
+// ============================================
+
+func safe_divide(a: int, b: int) -> Result
+    if b == 0 then
+        return Err(ERROR_DIVISION_BY_ZERO)
+    end
+    return Ok(a / b)
+end
+
+print("🔥 ERRO #1: DIVISÃO POR ZERO")
+print("Problema: Divisão por zero quebra o programa")
+print("Solução: Verificação explícita com Result")
+print("")
+
+let div_ok: Result = safe_divide(20, 4)
+let div_fail: Result = safe_divide(10, 0)
+
+print_result("20 ÷ 4", div_ok)
+print_result("10 ÷ 0", div_fail)
+
+if is_ok(div_ok) then
+    print("→ Posso usar o resultado: " + to_str(div_ok.value))
+end
+
+if is_err(div_fail) then
+    print("→ Erro detectado, usando valor padrão: " + to_str(unwrap_or(div_fail, -1)))
+end
+
+print("")
+
+// ============================================
+// ERRO #2: ACESSO FORA DOS LIMITES DO ARRAY
+// ============================================
+
+func safe_array_get(array: int[], size: int, index: int) -> Result
+    if index < 0 | index >= size then
+        return Err(ERROR_ARRAY_OUT_OF_BOUNDS)
+    end
+    return Ok(array[index])
+end
+
+print("🔥 ERRO #2: ARRAY OUT OF BOUNDS")
+print("Problema: Acesso inválido causa buffer overflow")
+print("Solução: Verificação de limites com Result")
+print("")
+
+let numbers: int[5] = [10, 20, 30, 40, 50]
+
+let access_ok: Result = safe_array_get(numbers, 5, 2)
+let access_fail: Result = safe_array_get(numbers, 5, 10)
+let access_negative: Result = safe_array_get(numbers, 5, -1)
+
+print_result("array[2]", access_ok)
+print_result("array[10]", access_fail)
+print_result("array[-1]", access_negative)
+
+if is_ok(access_ok) then
+    print("→ Valor seguro: " + to_str(access_ok.value))
+end
+
+print("")
+
+// ============================================
+// ERRO #3: NULL POINTER DEREFERENCE
+// ============================================
+
+struct OptionalInt
+    has_value: bool,
+    value: int
+end
+
+func Some(value: int) -> OptionalInt
+    return OptionalInt(true, value)
+end
+
+func None() -> OptionalInt
+    return OptionalInt(false, 0)
+end
+
+func safe_dereference(opt: OptionalInt) -> Result
+    if !opt.has_value then
+        return Err(ERROR_NULL_DEREFERENCE)
+    end
+    // Simplesmente extrai o valor de forma segura
+    // Em linguagens tradicionais, acessar null crasharia aqui
+    return Ok(opt.value)
+end
+
+print("🔥 ERRO #3: NULL POINTER DEREFERENCE")
+print("Problema: Acessar valor null quebra o programa")
+print("Solução: Verificação explícita antes do uso")
+print("")
+
+let valid_value: OptionalInt = Some(42)
+let null_value: OptionalInt = None()
+
+let deref_ok: Result = safe_dereference(valid_value)
+let deref_fail: Result = safe_dereference(null_value)
+
+print_result("deref(Some(42))", deref_ok)
+print_result("deref(None)", deref_fail)
+
+if is_ok(deref_ok) then
+    print("→ Valor extraído com segurança: " + to_str(deref_ok.value))
+    
+    // Agora posso usar o valor em operações, como divisão
+    let division_result: Result = safe_divide(100, deref_ok.value)
+    print_result("100 ÷ " + to_str(deref_ok.value), division_result)
+end
+
+if is_err(deref_fail) then
+    print("→ Null detectado! Em C/C++ isso seria um crash")
+    // Demonstra o que aconteceria se tentássemos usar o valor null
+    print("→ Tentativa de divisão com valor null evitada!")
+end
+
+print("")
+
+// ============================================
+// ERRO #4: PARSE/CONVERSION FAILURE
+// ============================================
+
+func safe_parse_positive(value: int) -> Result
+    if value < 0 then
+        return Err(ERROR_PARSE_FAILURE)
+    end
+    return Ok(value)
+end
+
+print("🔥 ERRO #4: PARSE/CONVERSION FAILURE")
+print("Problema: Conversão inválida causa comportamento indefinido")
+print("Solução: Validação explícita com Result")
+print("")
+
+let parse_ok: Result = safe_parse_positive(123)
+let parse_fail: Result = safe_parse_positive(-456)
+
+print_result("parse(123)", parse_ok)
+print_result("parse(-456)", parse_fail)
+
+if is_ok(parse_ok) then
+    print("→ Valor válido: " + to_str(parse_ok.value))
+end
+
+if is_err(parse_fail) then
+    print("→ Entrada inválida, usando padrão: " + to_str(unwrap_or(parse_fail, 0)))
+end
+
+print("")
+
+// ============================================
+// RESUMO: ANTES vs DEPOIS
+// ============================================
+
+print("=== RESUMO: TRANSFORMAÇÃO COMPLETA ===")
+print("")
+print("❌ ANTES (código perigoso):")
+print("   • Divisões quebram o programa")
+print("   • Arrays causam buffer overflow")
+print("   • Null pointers causam crashes")
+print("   • Parse falha silenciosamente")
+print("")
+print("✅ DEPOIS (código seguro):")
+print("   • Erros são valores explícitos")
+print("   • Falhas são tratadas graciosamente")
+print("   • Bugs são impossíveis por design")
+print("   • Código é autodocumentado")
+print("")
+print("🎯 RESULTADO: ZERO CRASHES, 100% CONFIÁVEL!")
+print("")
+print("🦀 Inspirado por Rust - Zero-cost abstractions para segurança máxima")

@@ -1,0 +1,282 @@
+// ============================================
+// PADRÃO RESULT<T, E> - INSPIRADO EM RUST
+// ============================================
+// Este exemplo demonstra como implementar o padrão Result
+// para tratamento robusto de erros sem exceptions
+
+print("=== PADRÃO RESULT EM NOX ===")
+print("")
+
+// Struct que representa um resultado que pode ser sucesso ou erro
+struct Result
+    is_success: bool,   // true se é Ok, false se é Err
+    value: int,         // valor de sucesso (válido apenas se is_success = true)
+    error_code: int     // código de erro (válido apenas se is_success = false)
+end
+
+// Enum simulado para códigos de erro comuns
+let ERROR_DIVISION_BY_ZERO: int = 1
+let ERROR_INVALID_INPUT: int = 2
+let ERROR_OUT_OF_BOUNDS: int = 3
+let ERROR_NOT_FOUND: int = 4
+let ERROR_PERMISSION_DENIED: int = 5
+
+// Funções construtoras para criar Result
+func Ok(value: int) -> Result
+    return Result(true, value, 0)  // error_code é ignorado em caso de sucesso
+end
+
+func Err(error_code: int) -> Result
+    return Result(false, 0, error_code)  // value é ignorado em caso de erro
+end
+
+// Função para verificar se é sucesso (equivale ao is_ok() do Rust)
+func is_ok(result: Result) -> bool
+    return result.is_success
+end
+
+// Função para verificar se é erro (equivale ao is_err() do Rust)
+func is_err(result: Result) -> bool
+    return !result.is_success
+end
+
+// Função para extrair valor (equivale ao unwrap() do Rust)
+// CUIDADO: só use se tiver certeza que is_ok() = true
+func unwrap(result: Result) -> int
+    if is_err(result) then
+        print("PANIC: Tentativa de unwrap em Result com erro!")
+        print("Código do erro: " + to_str(result.error_code))
+        return -1  // valor de panic
+    end
+    return result.value
+end
+
+// Função segura para extrair valor com default em caso de erro
+func unwrap_or(result: Result, default_value: int) -> int
+    if is_ok(result) then
+        return result.value
+    else
+        return default_value
+    end
+end
+
+// Função para obter o código de erro
+func unwrap_err(result: Result) -> int
+    if is_ok(result) then
+        print("PANIC: Tentativa de unwrap_err em Result de sucesso!")
+        return -1
+    end
+    return result.error_code
+end
+
+// Função para converter código de erro em mensagem
+func error_message(error_code: int) -> string
+    if error_code == ERROR_DIVISION_BY_ZERO then
+        return "Erro: Divisão por zero"
+    end
+    if error_code == ERROR_INVALID_INPUT then
+        return "Erro: Entrada inválida"
+    end
+    if error_code == ERROR_OUT_OF_BOUNDS then
+        return "Erro: Índice fora dos limites"
+    end
+    if error_code == ERROR_NOT_FOUND then
+        return "Erro: Elemento não encontrado"
+    end
+    if error_code == ERROR_PERMISSION_DENIED then
+        return "Erro: Permissão negada"
+    end
+    return "Erro desconhecido: " + to_str(error_code)
+end
+
+// Função para imprimir Result de forma amigável
+func print_result(name: string, result: Result)
+    print(name + ": ")
+    if is_ok(result) then
+        print("Ok(" + to_str(result.value) + ")")
+    else
+        print("Err(" + to_str(result.error_code) + ") - " + error_message(result.error_code))
+    end
+end
+
+// ============================================
+// EXEMPLOS PRÁTICOS
+// ============================================
+
+print(">>> Exemplo 1: Criando Results")
+let sucesso: Result = Ok(42)
+let falha: Result = Err(ERROR_DIVISION_BY_ZERO)
+
+print_result("sucesso", sucesso)
+print_result("falha", falha)
+print("")
+
+print(">>> Exemplo 2: Verificações e Extração Segura")
+if is_ok(sucesso) then
+    print("Operação bem-sucedida! Valor: " + to_str(sucesso.value))
+end
+
+if is_err(falha) then
+    print("Operação falhou: " + error_message(falha.error_code))
+end
+
+let valor_seguro: int = unwrap_or(falha, 999)
+print("Valor com fallback: " + to_str(valor_seguro))
+print("")
+
+// ============================================
+// FUNÇÃO DE DIVISÃO SEGURA
+// ============================================
+
+func divisao_robusta(dividendo: int, divisor: int) -> Result
+    if divisor == 0 then
+        return Err(ERROR_DIVISION_BY_ZERO)
+    end
+    return Ok(dividendo / divisor)
+end
+
+print(">>> Exemplo 3: Divisão Robusta")
+let div1: Result = divisao_robusta(20, 4)
+let div2: Result = divisao_robusta(10, 0)
+let div3: Result = divisao_robusta(15, 3)
+
+print_result("20 / 4", div1)
+print_result("10 / 0", div2)
+print_result("15 / 3", div3)
+print("")
+
+// ============================================
+// FUNÇÃO DE ACESSO SEGURO A ARRAY
+// ============================================
+
+func array_get(array: int[], tamanho: int, indice: int) -> Result
+    if indice < 0 | indice >= tamanho then
+        return Err(ERROR_OUT_OF_BOUNDS)
+    end
+    return Ok(array[indice])
+end
+
+print(">>> Exemplo 4: Acesso Seguro a Array")
+let numeros: int[5] = [10, 20, 30, 40, 50]
+
+let acesso1: Result = array_get(numeros, 5, 2)
+let acesso2: Result = array_get(numeros, 5, 10)
+let acesso3: Result = array_get(numeros, 5, -1)
+
+print_result("numeros[2]", acesso1)
+print_result("numeros[10]", acesso2)
+print_result("numeros[-1]", acesso3)
+print("")
+
+// ============================================
+// FUNÇÃO DE PARSING SIMPLES
+// ============================================
+
+func parse_positive_int(valor: int) -> Result
+    if valor < 0 then
+        return Err(ERROR_INVALID_INPUT)
+    end
+    return Ok(valor)
+end
+
+print(">>> Exemplo 5: Validação de Entrada")
+let parse1: Result = parse_positive_int(42)
+let parse2: Result = parse_positive_int(-5)
+let parse3: Result = parse_positive_int(0)
+
+print_result("parse(42)", parse1)
+print_result("parse(-5)", parse2)
+print_result("parse(0)", parse3)
+print("")
+
+// ============================================
+// COMPOSIÇÃO DE OPERAÇÕES QUE PODEM FALHAR
+// ============================================
+
+func operacao_composta(a: int, b: int, indice: int) -> Result
+    // Etapa 1: Dividir a por b
+    let resultado_div: Result = divisao_robusta(a, b)
+    if is_err(resultado_div) then
+        return resultado_div  // propaga o erro
+    end
+    
+    // Etapa 2: Validar se resultado é positivo
+    let valor_div: int = unwrap(resultado_div)
+    let resultado_parse: Result = parse_positive_int(valor_div)
+    if is_err(resultado_parse) then
+        return resultado_parse  // propaga o erro
+    end
+    
+    // Etapa 3: Usar como índice no array
+    let array_teste: int[3] = [100, 200, 300]
+    let resultado_final: Result = array_get(array_teste, 3, valor_div)
+    return resultado_final
+end
+
+print(">>> Exemplo 6: Composição de Operações")
+let comp1: Result = operacao_composta(6, 3, 0)  // 6/3=2, array[2]=300
+let comp2: Result = operacao_composta(10, 0, 0) // divisão por zero
+let comp3: Result = operacao_composta(8, 2, 0)  // 8/2=4, índice fora dos limites
+
+print_result("operacao_composta(6, 3, 0)", comp1)
+print_result("operacao_composta(10, 0, 0)", comp2)
+print_result("operacao_composta(8, 2, 0)", comp3)
+print("")
+
+// ============================================
+// TRATAMENTO SISTEMÁTICO DE ERROS
+// ============================================
+
+print(">>> Exemplo 7: Processamento em Lote")
+let resultado1: Result = Ok(100)
+let resultado2: Result = Err(ERROR_NOT_FOUND)  
+let resultado3: Result = Ok(200)
+let resultado4: Result = Err(ERROR_PERMISSION_DENIED)
+
+print("Processando 4 resultados individuais:")
+
+let sucessos: int = 0
+let falhas: int = 0
+
+if is_ok(resultado1) then
+    sucessos = sucessos + 1
+    print("✓ Resultado 1 - Sucesso: " + to_str(resultado1.value))
+else
+    falhas = falhas + 1
+    print("✗ Resultado 1 - Falha: " + error_message(resultado1.error_code))
+end
+
+if is_ok(resultado2) then
+    sucessos = sucessos + 1
+    print("✓ Resultado 2 - Sucesso: " + to_str(resultado2.value))
+else
+    falhas = falhas + 1
+    print("✗ Resultado 2 - Falha: " + error_message(resultado2.error_code))
+end
+
+if is_ok(resultado3) then
+    sucessos = sucessos + 1
+    print("✓ Resultado 3 - Sucesso: " + to_str(resultado3.value))
+else
+    falhas = falhas + 1
+    print("✗ Resultado 3 - Falha: " + error_message(resultado3.error_code))
+end
+
+if is_ok(resultado4) then
+    sucessos = sucessos + 1
+    print("✓ Resultado 4 - Sucesso: " + to_str(resultado4.value))
+else
+    falhas = falhas + 1
+    print("✗ Resultado 4 - Falha: " + error_message(resultado4.error_code))
+end
+
+print("Resumo: " + to_str(sucessos) + " sucessos, " + to_str(falhas) + " falhas")
+print("")
+
+print("=== VANTAGENS DO PADRÃO RESULT ===")
+print("1. EXPLICIT ERROR HANDLING: Erros são parte do tipo de retorno")
+print("2. NO EXCEPTIONS: Controle de fluxo previsível")
+print("3. COMPOSABLE: Operações podem ser facilmente combinadas") 
+print("4. TYPE SAFE: Impossível ignorar erros acidentalmente")
+print("5. FUNCTIONAL: Promove programação mais funcional")
+print("6. RUST-INSPIRED: Padrão battle-tested em sistemas críticos")
